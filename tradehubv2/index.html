@@ -427,12 +427,15 @@ return m;
 function formatDate(iso) { if(!iso) return '—'; return new Date(iso+'T00:00:00').toLocaleDateString('en-NZ', {day:'numeric',month:'short',year:'numeric'}); }
 function formatShortDate(iso) { if(!iso) return '—'; return new Date(iso+'T00:00:00').toLocaleDateString('en-NZ', {day:'numeric',month:'short'}); }
 function formatTime(iso) { if(!iso) return ''; return new Date(iso).toLocaleString('en-NZ', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}); }
-function todayISO(){ const d = new Date(); return d.toISOString().slice(0,10); }
-function addDays(iso, n) { const d = new Date(iso+'T00:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0,10); }
+// Local YYYY-MM-DD (NOT toISOString, which converts to UTC and shifts the day
+// backwards in +UTC timezones like NZ — that was the calendar off-by-one bug).
+function localISO(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function todayISO(){ return localISO(new Date()); }
+function addDays(iso, n) { const d = new Date(iso+'T00:00:00'); d.setDate(d.getDate() + n); return localISO(d); }
 function daysBetween(a, b) { const d1 = new Date(a+'T00:00:00'); const d2 = new Date(b+'T00:00:00'); return Math.round((d2-d1)/(1000*60*60*24)); }
 function datesFor(start, days) { const arr = []; for(let i = 0; i < days; i++) arr.push(addDays(start, i)); return arr; }
 function calcHours(start, end) { if(!start || !end) return 0; const [sh,sm] = start.split(':').map(Number); const [eh,em] = end.split(':').map(Number); let mins = (eh*60+em) - (sh*60+sm); if(mins < 0) mins += 24*60; return Math.round(mins/60*100)/100; }
-function monthsAgo(n) { const d = new Date(); d.setMonth(d.getMonth() - n); return d.toISOString().slice(0,10); }
+function monthsAgo(n) { const d = new Date(); d.setMonth(d.getMonth() - n); return localISO(d); }
 function encodeObj(p) { try { const json = JSON.stringify(p); const b64 = btoa(unescape(encodeURIComponent(json))); return b64.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); } catch { return ''; } }
 function decodeObj(str) { try { let b64 = str.replace(/-/g,'+').replace(/_/g,'/'); while(b64.length % 4) b64 += '='; const json = decodeURIComponent(escape(atob(b64))); return JSON.parse(json); } catch { return null; } }
 function buildShareUrl(channel) { const base = window.location.origin + window.location.pathname; return `${base}#p=${encodeObj(channel)}`; }
@@ -1206,7 +1209,8 @@ const [copiedMsg, setCopiedMsg] = useState(false); const [copiedLink, setCopiedL
 return (<div style={s.overlay} onClick={onClose}><div style={s.modal} onClick={e=>e.stopPropagation()}><div style={s.modalHeader}><div><div style={s.modalKicker}>Share</div><div style={s.modalTitle}>Share project</div></div><button style={s.closeBtn} onClick={onClose}>×</button></div><div style={s.modalBody}><label style={s.label}>WhatsApp message</label><div style={s.sharePreview}>{message}</div><div style={{display:'flex',gap:8,marginBottom:24,flexWrap:'wrap'}}><button style={s.copyBtn} onClick={()=>copy(message, setCopiedMsg)}>{copiedMsg?'✓ Copied':'📋 Copy message'}</button>{channel.whatsapp && (<a href={channel.whatsapp} target="_blank" rel="noreferrer" style={{...s.copyBtn, background:'var(--success-bg)',color:'var(--success)',border:'1px solid var(--success)',textDecoration:'none'}}>💬 Open group</a>)}</div><label style={s.label}>Shareable project link</label><div style={s.linkBox}>{shareUrl}</div><button style={s.copyBtn} onClick={()=>copy(shareUrl, setCopiedLink)}>{copiedLink?'✓ Copied':'🔗 Copy link'}</button></div><div style={s.modalFooter}><button style={s.cancelBtn} onClick={onClose}>Close</button></div></div></div>);
 }
 
-function InfoDisplay({channel}) {
+function InfoDisplay({channel, onSetChat, canEdit}) {
+const handleSetChat = () => { if(!onSetChat) return; const link = prompt('Add your chat group link (WhatsApp, Telegram, Discord, etc.):', channel.whatsapp || ''); if(link === null) return; onSetChat(link.trim()); };
 const anchorStatus = useMemo(() => {
   if (channel.anchorInspectionConfirmed === false || !channel.anchorInspectionDue) return null;
   const now = new Date(); now.setHours(0,0,0,0);
@@ -1290,7 +1294,20 @@ return (<div style={s.infoList}>
       ))}
     </div>
   )}
-  {(channel.whatsapp || channel.surveyLink) && (<div style={s.infoLinksRow}>{channel.whatsapp && (<a href={channel.whatsapp} target="_blank" rel="noreferrer" style={{...s.infoLinkBtn, background:'var(--success-bg)', color:'var(--success)', borderColor:'var(--success)'}}>💬 Join WhatsApp</a>)}{channel.surveyLink && (<a href={channel.surveyLink} target="_blank" rel="noreferrer" style={{...s.infoLinkBtn, background:'var(--accent-bg)', color:'var(--accent-text)', borderColor:'var(--accent)'}}>🔍 Quick Survey</a>)}</div>)}
+  <div style={s.infoLinksRow}>
+    <div style={{position:'relative',display:'inline-block'}}>
+      {channel.whatsapp
+        ? <a href={channel.whatsapp} target="_blank" rel="noreferrer" style={{...s.infoLinkBtn, background:'var(--success-bg)', color:'var(--success)', borderColor:'var(--success)'}}>💬 Join chat group</a>
+        : (canEdit
+            ? <button onClick={handleSetChat} style={{...s.infoLinkBtn, background:'var(--bg-raised)', color:'var(--text-dim)', border:'1px dashed var(--border-strong)', cursor:'pointer'}}>💬 Add chat group</button>
+            : null)
+      }
+      {canEdit && (
+        <button onClick={handleSetChat} title={channel.whatsapp ? 'Change chat group link' : 'Add chat group link'} style={{position:'absolute',top:-7,right:-7,width:20,height:20,borderRadius:'50%',background:'var(--success)',color:'#fff',border:'2px solid var(--bg)',cursor:'pointer',fontSize:14,lineHeight:1,padding:0,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+      )}
+    </div>
+    <span title="This feature is coming soon" style={{...s.infoLinkBtn, background:'var(--bg-raised)', color:'var(--text-faint)', borderColor:'var(--border)', cursor:'default'}}>🔍 Quick Survey · Coming soon</span>
+  </div>
   {(channel.editHistory || []).length > 0 && (
     <div style={{marginTop:18,padding:'10px 12px',background:'var(--bg-sunken)',borderRadius:7,border:'1px solid var(--border)'}}>
       <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:9,color:'var(--text-dim)',textTransform:'uppercase',letterSpacing:0.14,marginBottom:6}}>Audit log</div>
@@ -1397,8 +1414,48 @@ return (<div style={{height:'100%',display:'flex',flexDirection:'column'}}><div 
 }
 
 function MaterialsView({channel, onUpdate, onAdd}) {
-const items = channel.materials || []; const toggle = (id) => onUpdate(items.map(m => m.id === id ? {...m, done:!m.done} : m)); const remove = (id) => onUpdate(items.filter(m => m.id !== id));
-return (<div style={{height:'100%',display:'flex',flexDirection:'column'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}><div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:9,color:'var(--text-dim)',textTransform:'uppercase',letterSpacing:0.14,marginBottom:2}}>{items.filter(m=>m.done).length} of {items.length} ready</div><div style={{fontSize:13,color:'var(--text-dim)'}}>Tick items as you load them.</div></div><button style={s.primaryBtn} onClick={onAdd}>+ Add item</button></div><div style={{flex:1,overflowY:'auto'}}>{items.length === 0 ? <div style={{...s.empty,height:'60%'}}><span style={s.emptyIcon}>🧰</span><span style={s.emptyText}>No items yet</span></div> : items.map(m => (<div key={m.id} style={s.matRow}><input type="checkbox" style={s.matCheck} checked={m.done} onChange={()=>toggle(m.id)}/><span style={{...s.matName, ...(m.done?s.matNameDone:{})}}>{m.name}</span>{m.qty && <span style={s.matQty}>{m.qty}</span>}<button onClick={()=>remove(m.id)} style={{background:'none',border:'none',color:'var(--text-faint)',cursor:'pointer',fontSize:14,padding:0}}>×</button></div>))}</div></div>);
+const items = channel.materials || [];
+const [editingId, setEditingId] = useState(null);
+const [draftName, setDraftName] = useState('');
+const [draftQty, setDraftQty] = useState('');
+const toggle = (id) => onUpdate(items.map(m => m.id === id ? {...m, done:!m.done} : m));
+const remove = (id) => { if(confirm('Remove this item?')) onUpdate(items.filter(m => m.id !== id)); };
+const startEdit = (m) => { setEditingId(m.id); setDraftName(m.name||''); setDraftQty(m.qty||''); };
+const cancelEdit = () => { setEditingId(null); setDraftName(''); setDraftQty(''); };
+const saveEdit = (id) => { const name = draftName.trim(); if(!name){ cancelEdit(); return; } onUpdate(items.map(m => m.id === id ? {...m, name, qty: draftQty.trim()} : m)); cancelEdit(); };
+return (
+  <div style={{height:'100%',display:'flex',flexDirection:'column'}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}>
+      <div>
+        <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:9,color:'var(--text-dim)',textTransform:'uppercase',letterSpacing:0.14,marginBottom:2}}>{items.filter(m=>m.done).length} of {items.length} ready</div>
+        <div style={{fontSize:13,color:'var(--text-dim)'}}>Tick items as you load them · tap a name to rename.</div>
+      </div>
+      <button style={s.primaryBtn} onClick={onAdd}>+ Add item</button>
+    </div>
+    <div style={{flex:1,overflowY:'auto'}}>
+      {items.length === 0 ? <div style={{...s.empty,height:'60%'}}><span style={s.emptyIcon}>🧰</span><span style={s.emptyText}>No items yet</span></div> : items.map(m => (
+        <div key={m.id} style={s.matRow}>
+          {editingId === m.id ? (
+            <>
+              <input autoFocus style={{...s.input,marginBottom:0,flex:1}} value={draftName} onChange={e=>setDraftName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')saveEdit(m.id);if(e.key==='Escape')cancelEdit();}} placeholder="Item name"/>
+              <input style={{...s.input,marginBottom:0,width:80}} value={draftQty} onChange={e=>setDraftQty(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')saveEdit(m.id);if(e.key==='Escape')cancelEdit();}} placeholder="Qty"/>
+              <button onClick={()=>saveEdit(m.id)} style={{...s.badge,...s.badgeSuccess,cursor:'pointer',border:'1px solid var(--success)'}}>Save</button>
+              <button onClick={cancelEdit} style={{background:'none',border:'none',color:'var(--text-faint)',cursor:'pointer',fontSize:12,padding:0}}>Cancel</button>
+            </>
+          ) : (
+            <>
+              <input type="checkbox" style={s.matCheck} checked={m.done} onChange={()=>toggle(m.id)}/>
+              <span style={{...s.matName, ...(m.done?s.matNameDone:{}), cursor:'pointer'}} onClick={()=>startEdit(m)} title="Tap to rename">{m.name}</span>
+              {m.qty && <span style={s.matQty}>{m.qty}</span>}
+              <button onClick={()=>startEdit(m)} title="Edit" style={{background:'none',border:'none',color:'var(--text-faint)',cursor:'pointer',fontSize:13,padding:'0 2px'}}>✎</button>
+              <button onClick={()=>remove(m.id)} title="Remove" style={{background:'none',border:'none',color:'var(--text-faint)',cursor:'pointer',fontSize:14,padding:0}}>×</button>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  </div>
+);
 }
 
 function CalendarView({entries, jobChannels, allChannels, getCategory, onNewBooking, onEditBooking, onDeleteBooking, onJumpToProject, onMentionClick, currentUser}) {
@@ -1415,9 +1472,9 @@ const daysInPrev = new Date(year, month, 0).getDate();
 const today = todayISO();
 
 const cells = [];
-for(let i = 0; i < startOffset; i++) { const day = daysInPrev - startOffset + 1 + i; cells.push({day, other:true, date: new Date(year, month-1, day).toISOString().slice(0,10)}); }
-for(let i = 1; i <= daysInMonth; i++) cells.push({day:i, other:false, date: new Date(year, month, i).toISOString().slice(0,10)});
-while(cells.length % 7 !== 0) { const day = cells.length - daysInMonth - startOffset + 1; cells.push({day, other:true, date: new Date(year, month+1, day).toISOString().slice(0,10)}); }
+for(let i = 0; i < startOffset; i++) { const day = daysInPrev - startOffset + 1 + i; cells.push({day, other:true, date: localISO(new Date(year, month-1, day))}); }
+for(let i = 1; i <= daysInMonth; i++) cells.push({day:i, other:false, date: localISO(new Date(year, month, i))});
+while(cells.length % 7 !== 0) { const day = cells.length - daysInMonth - startOffset + 1; cells.push({day, other:true, date: localISO(new Date(year, month+1, day))}); }
 
 // Merge entries: same project on same day = grouped together
 const mergedByDate = {};
@@ -1653,7 +1710,7 @@ return (<div style={{height:'100%',display:'flex',flexDirection:'column'}}><div 
 }
 
 function AnnouncementsView({channel, notes, setNotes, allChannels, onMentionClick, getCategory}) {
-return (<div style={{height:'100%',display:'flex',flexDirection:'column'}}><div style={s.announcementBanner}><div style={s.announcementIcon}>📢</div><div style={s.announcementTitle}>Join the Company WhatsApp Channel</div><div style={s.announcementText}>Stay updated with company announcements, job opportunities, and crew news.</div><a href={channel.whatsappLink || 'https://chat.whatsapp.com/ral-crew-announcements-demo'} target="_blank" rel="noreferrer" style={s.announcementBtn}>💬 Join WhatsApp Channel →</a></div><NotesFeed channelId={channel.id} threadId="main" notes={notes} setNotes={setNotes} placeholder="Post an announcement... (type # to mention)" allChannels={allChannels} onMentionClick={onMentionClick} getCategory={getCategory}/></div>);
+return (<div style={{height:'100%',display:'flex',flexDirection:'column'}}>{channel.whatsappLink ? (<div style={s.announcementBanner}><div style={s.announcementIcon}>📢</div><div style={s.announcementTitle}>Join the Company Chat Group</div><div style={s.announcementText}>Stay updated with company announcements, job opportunities, and crew news.</div><a href={channel.whatsappLink} target="_blank" rel="noreferrer" style={s.announcementBtn}>💬 Join chat group →</a></div>) : null}<NotesFeed channelId={channel.id} threadId="main" notes={notes} setNotes={setNotes} placeholder="Post an announcement... (type # to mention)" allChannels={allChannels} onMentionClick={onMentionClick} getCategory={getCategory}/></div>);
 }
 
 // ── RAMS IFRAME VIEW ────────────────────────────────────────────────────────
@@ -3020,11 +3077,11 @@ function compressImage(file, {maxSide = 512, maxBytes = 400 * 1024} = {}) {
   });
 }
 
-function LogoAutoFetch({onLogo}) {
+function CompanyAutoFill({onResult, autoFocus=false}) {
 const [input, setInput] = useState('');
 const [status, setStatus] = useState(null); // null | 'loading' | 'ok' | 'error'
 const [message, setMessage] = useState('');
-const fetchLogo = async () => {
+const run = async () => {
   if (!input.trim()) return;
   setStatus('loading'); setMessage('');
   try {
@@ -3034,22 +3091,28 @@ const fetchLogo = async () => {
       body: JSON.stringify({input: input.trim()}),
     });
     const data = await res.json();
+    // Hand back whatever we got — name and/or logo. The modal decides what to fill.
+    onResult({
+      name: data.name || '',
+      logo: (data.ok && data.dataUrl) ? data.dataUrl : '',
+    });
     if (data.ok && data.dataUrl) {
-      onLogo(data.dataUrl);
-      setStatus('ok'); setMessage('✓ Logo found (' + (data.bestSource || 'web') + ')');
+      setStatus('ok'); setMessage('✓ ' + (data.name ? 'Filled "' + data.name + '" and found a ' : 'Found a ') + 'logo (' + (data.bestSource || 'web') + ')');
+    } else if (data.name) {
+      setStatus('ok'); setMessage('✓ Filled the name from the site. No logo found — upload one below.');
     } else {
-      setStatus('error'); setMessage(data.message || 'No logo found. Upload it manually below.');
+      setStatus('error'); setMessage(data.message || 'Nothing found. Type the name and upload a logo below.');
     }
   } catch (e) {
-    setStatus('error'); setMessage('Connection error. Upload the logo manually below.');
+    setStatus('error'); setMessage('Connection error. Type the name and upload the logo manually below.');
   }
 };
 return (
   <div style={{marginBottom:14}}>
-    <label style={s.label}>🔍 Auto-fetch logo (paste the company website)</label>
+    <label style={s.label}>🔍 Company website (auto-fills name &amp; logo)</label>
     <div style={{display:'flex',gap:6}}>
-      <input style={{...s.input,marginBottom:0,flex:1}} value={input} onChange={e=>setInput(e.target.value)} placeholder="e.g. company.co.nz (not LinkedIn/IG)" onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();fetchLogo();}}}/>
-      <button type="button" style={{...s.primaryBtn,padding:'10px 14px',opacity:(status==='loading'||!input.trim())?0.6:1}} disabled={status==='loading'||!input.trim()} onClick={fetchLogo}>{status==='loading'?'Searching…':'Search'}</button>
+      <input style={{...s.input,marginBottom:0,flex:1}} value={input} onChange={e=>setInput(e.target.value)} placeholder="e.g. company.co.nz" autoFocus={autoFocus} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();run();}}}/>
+      <button type="button" style={{...s.primaryBtn,padding:'10px 14px',opacity:(status==='loading'||!input.trim())?0.6:1}} disabled={status==='loading'||!input.trim()} onClick={run}>{status==='loading'?'Searching…':'Fetch'}</button>
     </div>
     {message && <div style={{fontSize:11,marginTop:6,color:status==='ok'?'var(--success)':'var(--warn)'}}>{message}</div>}
   </div>
@@ -3084,7 +3147,7 @@ return (<div style={{maxWidth:560}}>
   <div style={{...s.infoList,padding:'24px 26px'}}>
     <label style={s.label}>Company name</label>
     <input style={s.input} value={name} onChange={e=>setName(e.target.value)}/>
-    <LogoAutoFetch onLogo={setLogo}/>
+    <CompanyAutoFill onResult={({name:n,logo:l})=>{ if(l) setLogo(l); if(n) setName(prev=>prev.trim()?prev:n); }}/>
     <label style={s.label}>Logo</label>
     <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:8}}>
       {logo
@@ -3105,7 +3168,7 @@ return (<div style={{maxWidth:560}}>
 </div>);
 }
 
-function ThreadView({channel, thread, notes, setNotes, allChannels, incidents, onIncidentSubmit, onIncidentDelete, onIncidentEdit, onMentionClick, onJumpToProject, onUpdateMaterials, onAddMaterial, calendarEntries, onNewBooking, onEditBooking, onDeleteBooking, getCategory, allJobs, timesheets, onAddTimesheet, onEditTimesheet, onViewTimesheet, onConfirmTimesheet, onDeleteTimesheet, onBulkConfirmTimesheet, crew, onAddCrew, onRemoveCrew, isMobile, company, currentUser, onUpdateCompany, toolboxes, onNewToolbox, onViewToolbox, onDeleteToolbox, ramsEntries, onNewRams, onViewRams, onDeleteRams}) {
+function ThreadView({channel, thread, notes, setNotes, allChannels, incidents, onIncidentSubmit, onIncidentDelete, onIncidentEdit, onMentionClick, onJumpToProject, onSetChat, onUpdateMaterials, onAddMaterial, calendarEntries, onNewBooking, onEditBooking, onDeleteBooking, getCategory, allJobs, timesheets, onAddTimesheet, onEditTimesheet, onViewTimesheet, onConfirmTimesheet, onDeleteTimesheet, onBulkConfirmTimesheet, crew, onAddCrew, onRemoveCrew, isMobile, company, currentUser, onUpdateCompany, toolboxes, onNewToolbox, onViewToolbox, onDeleteToolbox, ramsEntries, onNewRams, onViewRams, onDeleteRams}) {
 if(channel.type === 'plain') { if(channel.name === '📢announcements') { return <AnnouncementsView channel={channel} notes={notes} setNotes={setNotes} allChannels={allChannels} onMentionClick={onMentionClick} getCategory={getCategory}/>; } return <NotesFeed channelId={channel.id} threadId="main" notes={notes} setNotes={setNotes} placeholder={`Post in ${channel.name}... (type # to mention)`} allChannels={allChannels} onMentionClick={onMentionClick} getCategory={getCategory}/>; }
 if(channel.type === 'materials') return <MaterialsView channel={channel} onUpdate={onUpdateMaterials} onAdd={onAddMaterial}/>;
 if(channel.type === 'calendar') return <CalendarView entries={calendarEntries} jobChannels={allJobs} allChannels={allChannels} getCategory={getCategory} onNewBooking={onNewBooking} onEditBooking={onEditBooking} onDeleteBooking={onDeleteBooking} onJumpToProject={onJumpToProject} onMentionClick={onMentionClick} company={company} currentUser={currentUser}/>;
@@ -3115,7 +3178,7 @@ if(channel.type === 'ts-project') return <TimesheetProjectChannelView projectId=
 if(channel.type === 'roster') return <CrewRosterView crew={crew} onAdd={onAddCrew} onRemove={onRemoveCrew}/>;
 if(channel.type === 'users') return <UsersView company={company} onUpdateCompany={onUpdateCompany} currentUser={currentUser}/>;
 if(channel.type === 'company-info') return <CompanyInfoView company={company} onUpdateCompany={onUpdateCompany}/>;
-if(thread.id === 'info') return <InfoDisplay channel={channel}/>;
+if(thread.id === 'info') return <InfoDisplay channel={channel} canEdit={currentUser?.role==='manager'||currentUser?.role==='team_leader'} onSetChat={onSetChat}/>;
 if(thread.id === 'timesheet') return <ProjectTimesheetView channel={channel} timesheets={timesheets} onAdd={onAddTimesheet} onEdit={onEditTimesheet} onView={onViewTimesheet} onConfirm={onConfirmTimesheet} onDelete={onDeleteTimesheet} onBulkConfirm={onBulkConfirmTimesheet} currentUser={currentUser}/>;
 if(thread.id === 'incidents') return <ProjectIncidentsView channel={channel} incidents={incidents} allChannels={allChannels} onMentionClick={onMentionClick} onAdd={onIncidentSubmit} onDelete={onIncidentDelete} onEdit={onIncidentEdit} currentUser={currentUser}/>;
 if(thread.id === 'toolbox') return <ToolboxView project={channel} toolboxes={toolboxes} onNew={onNewToolbox} onView={onViewToolbox} onDelete={onDeleteToolbox} currentUser={currentUser}/>;
@@ -3518,12 +3581,12 @@ return (<div style={s.app}>
       <div style={s.headerTitleWrap}>
         <div style={headerKickerStyle}>{currentCategory ? `${currentCategory.emoji} ${currentCategory.name}` : ''}{channel.status === 'done' && ' · done'}</div>
         <div style={headerTitleStyle}>{channelColor && <span style={{...s.headerColorDot, background:channelColor.bar}}/>}{channel.type === 'ts-project' ? '🏢 ' + channel.name : channel.name}</div>
-        <div style={headerMetaStyle}>{channel.type === 'job' ? `${channel.address || 'No address'} · Started ${formatDate(channel.startDate)}` : channel.name === '📢announcements' ? 'Company-wide announcements — join WhatsApp group' : channel.type === 'materials' ? 'Materials list' : channel.type === 'calendar' ? 'Work calendar — bookings & crew scheduling' : channel.type === 'incidents-bin' ? 'All ' + channel.name + ' reports across projects' : channel.type === 'ts-overview' ? 'View hours per worker and project — filter by date range for invoicing' : channel.type === 'ts-project' ? "All workers' hours on this project" : channel.type === 'users' ? 'Manage user accounts and roles' : channel.type === 'company-info' ? 'Company name and logo settings' : channel.type === 'roster' ? 'Manage crew members — names appear in timesheet dropdowns' : 'Plain channel'}</div>
+        <div style={headerMetaStyle}>{channel.type === 'job' ? `${channel.address || 'No address'} · Started ${formatDate(channel.startDate)}` : channel.name === '📢announcements' ? 'Company-wide announcements — join the chat group' : channel.type === 'materials' ? 'Materials list' : channel.type === 'calendar' ? 'Work calendar — bookings & crew scheduling' : channel.type === 'incidents-bin' ? 'All ' + channel.name + ' reports across projects' : channel.type === 'ts-overview' ? 'View hours per worker and project — filter by date range for invoicing' : channel.type === 'ts-project' ? "All workers' hours on this project" : channel.type === 'users' ? 'Manage user accounts and roles' : channel.type === 'company-info' ? 'Company name and logo settings' : channel.type === 'roster' ? 'Manage crew members — names appear in timesheet dropdowns' : 'Plain channel'}</div>
       </div>
       <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
         {channel.type === 'job' && channel.whatsapp && (<a href={channel.whatsapp} target="_blank" rel="noreferrer" style={{...s.badge,...s.badgeSuccess,textDecoration:'none'}}>💬 Chat</a>)}
-        {channel.type !== 'job' && channel.whatsappLink && (<a href={channel.whatsappLink} target="_blank" rel="noreferrer" style={{...s.badge,...s.badgeSuccess,textDecoration:'none'}}>💬 WhatsApp</a>)}
-        {channel.type === 'plain' && !channel.whatsappLink && currentUser.role !== 'crew' && (<button style={{...s.badge,...s.badgeGhost}} onClick={() => { const link = prompt('Paste WhatsApp group invite link:'); if(link && link.trim()) updateData(prev => ({...prev, channels: prev.channels.map(c => c.id === channel.id ? {...c, whatsappLink: link.trim()} : c)})); }}>💬 Set WhatsApp</button>)}
+        {channel.type !== 'job' && channel.whatsappLink && (<a href={channel.whatsappLink} target="_blank" rel="noreferrer" style={{...s.badge,...s.badgeSuccess,textDecoration:'none'}}>💬 Chat group</a>)}
+        {channel.type === 'plain' && !channel.whatsappLink && currentUser.role !== 'crew' && (<button style={{...s.badge,...s.badgeGhost}} onClick={() => { const link = prompt('Add your chat group link (WhatsApp, Telegram, Discord, etc.):'); if(link && link.trim()) updateData(prev => ({...prev, channels: prev.channels.map(c => c.id === channel.id ? {...c, whatsappLink: link.trim()} : c)})); }}>💬 Add chat group</button>)}
         {channel.type === 'job' && (<>
           <button style={{...s.badge,...s.badgePrimary}} onClick={() => setShowShare(true)}>↗ Share</button>
           {(currentUser.role === 'manager' || currentUser.role === 'team_leader') && <button style={{...s.badge,...s.badgeGhost}} onClick={() => toggleStatus(channel.id)}>{channel.status === 'done' ? '↻ Re-open' : '✓ Done'}</button>}
@@ -3545,7 +3608,7 @@ return (<div style={s.app}>
       </div>
     )}
     <div style={contentStyle}>
-      <ThreadView channel={channel} thread={currentThread} notes={notes} setNotes={setNotes} allChannels={allChannelsIncludingDynamic} incidents={incidents} onIncidentSubmit={() => setIncidentModal({})} onIncidentDelete={deleteIncident} onIncidentEdit={(inc)=>setIncidentModal({editing:inc})} onMentionClick={handleMentionClick} onJumpToProject={selectChannel} onUpdateMaterials={updateMaterials} onAddMaterial={() => setShowAddMaterial(true)} calendarEntries={calendarEntries || []} onNewBooking={(date) => setBookingModal({defaultDate: date})} onEditBooking={(entry) => setBookingModal({editing: entry})} onDeleteBooking={deleteBooking} getCategory={getCategory} allJobs={allJobs} timesheets={timesheets || []} onAddTimesheet={() => setShowTimesheetModal({projectId:channel.id, projectName:channel.name})} onEditTimesheet={(e)=>setShowTimesheetModal({projectId:e.projectId, projectName:e.projectName, editing:e})} onViewTimesheet={(e)=>setViewTimesheet(e)} onConfirmTimesheet={confirmTimesheetEntry} onDeleteTimesheet={deleteTimesheetEntry} onBulkConfirmTimesheet={bulkConfirmTimesheet} crew={crew} onAddCrew={addCrew} onRemoveCrew={removeCrew} isMobile={isMobile} company={company} currentUser={currentUser} onUpdateCompany={onUpdateCompany} toolboxes={toolboxes} onNewToolbox={()=>setToolboxModal({})} onViewToolbox={(tb)=>setViewToolbox(tb)} onDeleteToolbox={deleteToolbox} ramsEntries={ramsEntries} onNewRams={()=>setRamsModal({})} onViewRams={(r)=>setViewRams(r)} onDeleteRams={deleteRams}/>
+      <ThreadView channel={channel} thread={currentThread} notes={notes} setNotes={setNotes} allChannels={allChannelsIncludingDynamic} incidents={incidents} onIncidentSubmit={() => setIncidentModal({})} onIncidentDelete={deleteIncident} onIncidentEdit={(inc)=>setIncidentModal({editing:inc})} onMentionClick={handleMentionClick} onJumpToProject={selectChannel} onSetChat={(link)=>updateData(prev=>({...prev, channels: prev.channels.map(c=>c.id===channel.id?{...c, whatsapp:link}:c)}))} onUpdateMaterials={updateMaterials} onAddMaterial={() => setShowAddMaterial(true)} calendarEntries={calendarEntries || []} onNewBooking={(date) => setBookingModal({defaultDate: date})} onEditBooking={(entry) => setBookingModal({editing: entry})} onDeleteBooking={deleteBooking} getCategory={getCategory} allJobs={allJobs} timesheets={timesheets || []} onAddTimesheet={() => setShowTimesheetModal({projectId:channel.id, projectName:channel.name})} onEditTimesheet={(e)=>setShowTimesheetModal({projectId:e.projectId, projectName:e.projectName, editing:e})} onViewTimesheet={(e)=>setViewTimesheet(e)} onConfirmTimesheet={confirmTimesheetEntry} onDeleteTimesheet={deleteTimesheetEntry} onBulkConfirmTimesheet={bulkConfirmTimesheet} crew={crew} onAddCrew={addCrew} onRemoveCrew={removeCrew} isMobile={isMobile} company={company} currentUser={currentUser} onUpdateCompany={onUpdateCompany} toolboxes={toolboxes} onNewToolbox={()=>setToolboxModal({})} onViewToolbox={(tb)=>setViewToolbox(tb)} onDeleteToolbox={deleteToolbox} ramsEntries={ramsEntries} onNewRams={()=>setRamsModal({})} onViewRams={(r)=>setViewRams(r)} onDeleteRams={deleteRams}/>
     </div>
   </>)}
 </div>
@@ -3864,6 +3927,13 @@ const onLogoUpload = async (e) => {
   e.target.value = '';
 };
 
+// Fill from the website lookup. Only set the name if it's still empty,
+// so we never overwrite something the user already typed.
+const handleAutoFill = ({name: foundName, logo: foundLogo}) => {
+  if (foundLogo) setLogo(foundLogo);
+  if (foundName) setName(prev => prev.trim() ? prev : foundName);
+};
+
 const save = () => {
   if (!name.trim()) return alert('Company name required.');
   if (!editing && (!managerName.trim() || !managerEmail.trim())) return alert('Manager name and email required for the first user.');
@@ -3885,9 +3955,9 @@ return (
       <button style={s.closeBtn} onClick={onClose}>×</button>
     </div>
     <div style={s.modalBody}>
+      <CompanyAutoFill onResult={handleAutoFill} autoFocus={true}/>
       <label style={s.label}>Company name *</label>
-      <input style={s.input} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. RAL Solutions" autoFocus/>
-      <LogoAutoFetch onLogo={setLogo}/>
+      <input style={s.input} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. RAL Solutions"/>
       <label style={s.label}>Company logo (optional, &lt; 500 KB)</label>
       <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
         {logo
