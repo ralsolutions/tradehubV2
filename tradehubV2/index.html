@@ -623,16 +623,22 @@ const handleSave = () => { const channel = {...data, id: editing?.id || 'ch-'+Da
 return (<div style={s.overlay} onClick={onClose}><div style={s.modal} onClick={e=>e.stopPropagation()}><div style={s.modalHeader}><div><div style={s.modalKicker}>{editing ? 'Edit' : 'New'} · Job Channel</div><div style={s.modalTitle}>{editing ? 'Edit project' : 'New project'}</div><div style={{display:'flex',gap:6,marginTop:10,alignItems:'center'}}>{steps.map((st,i) => (<span key={i} style={{...s.stepDot, background: i <= step ? 'var(--accent)' : 'var(--border-strong)', width: i===step?22:8, borderRadius: i===step?4:'50%', transition:'all 0.2s'}}/>))}<span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:9,color:'var(--text-dim)',marginLeft:6,textTransform:'uppercase',letterSpacing:0.14}}>{steps[step].title}</span></div></div><button style={s.closeBtn} onClick={onClose}>×</button></div><div style={s.modalBody}>{steps[step].fields}</div><div style={s.modalFooter}>{step > 0 ? <button style={s.cancelBtn} onClick={()=>setStep(p=>p-1)}>← Back</button> : <button style={s.cancelBtn} onClick={onClose}>Cancel</button>}{step < steps.length-1 ? <button style={{...s.primaryBtn, opacity:canNext?1:0.5}} disabled={!canNext} onClick={()=>setStep(p=>p+1)}>Next →</button> : <button style={s.primaryBtn} onClick={handleSave}>{editing ? 'Save' : 'Create'}</button>}</div></div></div>);
 }
 
+function ChannelEditModal({onClose, onSave, channel}) {
+const [name, setName] = useState(channel?.name || ''); const [emoji, setEmoji] = useState(channel?.emoji || ''); const [customEmoji, setCustomEmoji] = useState('');
+const save = () => { if(!name.trim()) return; onSave({...channel, name:name.trim(), emoji:(customEmoji||emoji).trim()}); onClose(); };
+return (<div style={s.overlay} onClick={onClose}><div style={{...s.modal,...s.modalSm}} onClick={e=>e.stopPropagation()}><div style={s.modalHeader}><div><div style={s.modalKicker}>Edit · Channel</div><div style={s.modalTitle}>Edit channel</div></div><button style={s.closeBtn} onClick={onClose}>×</button></div><div style={s.modalBody}><label style={s.label}>Name *</label><input style={s.input} value={name} onChange={e=>setName(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter'&&name.trim())save();}}/><label style={s.label}>Icon — pick one <span style={{color:'var(--text-faint)',textTransform:'none',letterSpacing:0}}>(optional)</span></label><div style={s.emojiGrid}><div style={{...s.emojiCell, ...((!emoji&&!customEmoji)?s.emojiCellActive:{}), fontSize:11, color:'var(--text-dim)'}} onClick={()=>{setEmoji('');setCustomEmoji('');}}>none</div>{EMOJI_GRID.map(em => (<div key={em} style={{...s.emojiCell, ...(emoji===em&&!customEmoji?s.emojiCellActive:{})}} onClick={()=>{setEmoji(em);setCustomEmoji('');}}>{em}</div>))}</div><label style={s.label}>Or paste any emoji</label><input style={s.input} value={customEmoji} onChange={e=>setCustomEmoji(e.target.value)} maxLength={4}/></div><div style={s.modalFooter}><button style={s.cancelBtn} onClick={onClose}>Cancel</button><button style={{...s.primaryBtn, opacity:name.trim()?1:0.5}} disabled={!name.trim()} onClick={save}>Save</button></div></div></div>);
+}
+
 function CategoryModal({onClose, onSave, onDelete, editing, isAdmin}) {
 const [name, setName] = useState(editing?.name || ''); const [emoji, setEmoji] = useState(editing?.emoji || '📁'); const [customEmoji, setCustomEmoji] = useState('');
 const save = () => { if(!name.trim()) return; onSave({id:editing?.id || 'cat-'+Date.now().toString(36), name:name.trim(), emoji:(customEmoji||emoji).trim()||'📁', system:editing?.system||null, collapsed:editing?.collapsed??false, order:editing?.order??999}); onClose(); };
 return (<div style={s.overlay} onClick={onClose}><div style={{...s.modal,...s.modalSm}} onClick={e=>e.stopPropagation()}><div style={s.modalHeader}><div><div style={s.modalKicker}>{editing?'Edit':'New'} · Category</div><div style={s.modalTitle}>{editing?'Edit category':'New category'}</div></div><button style={s.closeBtn} onClick={onClose}>×</button></div><div style={s.modalBody}><label style={s.label}>Name *</label><input style={s.input} value={name} onChange={e=>setName(e.target.value)} autoFocus/><label style={s.label}>Emoji — pick one</label><div style={s.emojiGrid}>{EMOJI_GRID.map(em => (<div key={em} style={{...s.emojiCell, ...(emoji===em&&!customEmoji?s.emojiCellActive:{})}} onClick={()=>{setEmoji(em);setCustomEmoji('');}}>{em}</div>))}</div><label style={s.label}>Or paste any emoji</label><input style={s.input} value={customEmoji} onChange={e=>setCustomEmoji(e.target.value)} maxLength={4}/></div><div style={s.modalFooter}>{editing && !editing.system && onDelete && (<button style={{...s.cancelBtn, color:'var(--danger)', borderColor:'var(--danger)', marginRight:'auto'}} onClick={()=>{ onDelete(editing); onClose(); }}>{isAdmin ? '🗑 Delete' : '🗑 Request deletion'}</button>)}<button style={s.cancelBtn} onClick={onClose}>Cancel</button><button style={{...s.primaryBtn, opacity:name.trim()?1:0.5}} disabled={!name.trim()} onClick={save}>{editing?'Save':'Create'}</button></div></div></div>);
 }
 
-function ChannelTypePicker({onClose, onPickJob, onPickPlain, onPickMaterials, onPickCalendar, categoryName}) {
-const [step, setStep] = useState('pick'); const [pickedType, setPickedType] = useState(null); const [chanName, setChanName] = useState('');
+function ChannelTypePicker({onClose, onPickJob, onPickPlain, onPickMaterials, onPickCalendar, categoryName, initialType}) {
+const [step, setStep] = useState(initialType ? 'name' : 'pick'); const [pickedType, setPickedType] = useState(initialType || null); const [chanName, setChanName] = useState('');
 const submit = () => { if(!chanName.trim()) return; if(pickedType === 'plain') onPickPlain(chanName.trim()); if(pickedType === 'materials') onPickMaterials(chanName.trim()); if(pickedType === 'calendar') onPickCalendar(chanName.trim()); };
-if(step === 'name') { return (<div style={s.overlay} onClick={onClose}><div style={{...s.modal,...s.modalSm}} onClick={e=>e.stopPropagation()}><div style={s.modalHeader}><div><div style={s.modalKicker}>New · {pickedType} channel</div><div style={s.modalTitle}>Channel name</div></div><button style={s.closeBtn} onClick={onClose}>×</button></div><div style={s.modalBody}><label style={s.label}>Channel name *</label><input style={s.input} value={chanName} onChange={e=>setChanName(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter'&&chanName.trim())submit();}}/></div><div style={s.modalFooter}><button style={s.cancelBtn} onClick={()=>setStep('pick')}>← Back</button><button style={{...s.primaryBtn, opacity:chanName.trim()?1:0.5}} disabled={!chanName.trim()} onClick={submit}>Create</button></div></div></div>); }
+if(step === 'name') { return (<div style={s.overlay} onClick={onClose}><div style={{...s.modal,...s.modalSm}} onClick={e=>e.stopPropagation()}><div style={s.modalHeader}><div><div style={s.modalKicker}>New · {pickedType} channel</div><div style={s.modalTitle}>Channel name</div></div><button style={s.closeBtn} onClick={onClose}>×</button></div><div style={s.modalBody}><label style={s.label}>Channel name *</label><input style={s.input} value={chanName} onChange={e=>setChanName(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter'&&chanName.trim())submit();}}/></div><div style={s.modalFooter}><button style={s.cancelBtn} onClick={()=> initialType ? onClose() : setStep('pick')}>{initialType ? 'Cancel' : '← Back'}</button><button style={{...s.primaryBtn, opacity:chanName.trim()?1:0.5}} disabled={!chanName.trim()} onClick={submit}>Create</button></div></div></div>); }
 return (<div style={s.overlay} onClick={onClose}><div style={s.modal} onClick={e=>e.stopPropagation()}><div style={s.modalHeader}><div><div style={s.modalKicker}>New Channel · in {categoryName}</div><div style={s.modalTitle}>Pick channel type</div></div><button style={s.closeBtn} onClick={onClose}>×</button></div><div style={s.modalBody}><div style={s.typeRow}><div style={s.typeCard} onClick={onPickJob}><div style={s.typeIcon}>🏗️</div><div style={s.typeTitle}>Job channel</div><div style={s.typeDesc}>Full rope access job — wizard, info, toolbox, RAMS, surveys.</div></div><div style={s.typeCard} onClick={()=>{setPickedType('plain');setStep('name');}}><div style={s.typeIcon}>💬</div><div style={s.typeTitle}>Plain channel</div><div style={s.typeDesc}>Notes feed for chat, announcements, reference.</div></div></div><div style={s.typeRow}><div style={s.typeCard} onClick={()=>{setPickedType('materials');setStep('name');}}><div style={s.typeIcon}>🧰</div><div style={s.typeTitle}>Materials list</div><div style={s.typeDesc}>Checkable list of items — tools, paint, fixings, etc.</div></div><div style={s.typeCard} onClick={()=>{setPickedType('calendar');setStep('name');}}><div style={s.typeIcon}>📅</div><div style={s.typeTitle}>Calendar</div><div style={s.typeDesc}>Month view — schedule jobs and crew per day.</div></div></div></div><div style={s.modalFooter}><button style={s.cancelBtn} onClick={onClose}>Cancel</button></div></div></div>);
 }
 
@@ -1418,15 +1424,16 @@ return (<div style={{height:'100%',display:'flex',flexDirection:'column'}}><div 
 }
 
 function MaterialsView({channel, onUpdate, onAdd}) {
-const items = channel.materials || [];
+const stored = channel.materials || [];
+const items = stored.slice().sort((a,b)=> (a.name||'').localeCompare((b.name||''), undefined, {sensitivity:'base'}));
 const [editingId, setEditingId] = useState(null);
 const [draftName, setDraftName] = useState('');
 const [draftQty, setDraftQty] = useState('');
-const toggle = (id) => onUpdate(items.map(m => m.id === id ? {...m, done:!m.done} : m));
-const remove = (id) => { if(confirm('Remove this item?')) onUpdate(items.filter(m => m.id !== id)); };
+const toggle = (id) => onUpdate(stored.map(m => m.id === id ? {...m, done:!m.done} : m));
+const remove = (id) => { if(confirm('Remove this item?')) onUpdate(stored.filter(m => m.id !== id)); };
 const startEdit = (m) => { setEditingId(m.id); setDraftName(m.name||''); setDraftQty(m.qty||''); };
 const cancelEdit = () => { setEditingId(null); setDraftName(''); setDraftQty(''); };
-const saveEdit = (id) => { const name = draftName.trim(); if(!name){ cancelEdit(); return; } onUpdate(items.map(m => m.id === id ? {...m, name, qty: draftQty.trim()} : m)); cancelEdit(); };
+const saveEdit = (id) => { const name = draftName.trim(); if(!name){ cancelEdit(); return; } onUpdate(stored.map(m => m.id === id ? {...m, name, qty: draftQty.trim()} : m)); cancelEdit(); };
 return (
   <div style={{height:'100%',display:'flex',flexDirection:'column'}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}>
@@ -3190,7 +3197,7 @@ if(thread.id === 'rams') return <RamsView project={channel} ramsEntries={ramsEnt
 return <NotesFeed channelId={channel.id} threadId={thread.id} notes={notes} setNotes={setNotes} placeholder={`Add a ${thread.label} note... (type # to mention)`} allChannels={allChannels} onMentionClick={onMentionClick} getCategory={getCategory}/>;
 }
 
-function CategoryBlock({category, channels, activeId, onSelect, onAddChannel, onEditCategory, getColor, onDragStart, onDragOver, onDrop, isDragging, canAddChannel, canEditCategory, canMoveChannel, onChannelDragStart, onChannelDrop, pendingDeletions}) {
+function CategoryBlock({category, channels, activeId, onSelect, onAddChannel, onEditCategory, onEditChannel, canEditChannel, getColor, onDragStart, onDragOver, onDrop, isDragging, canAddChannel, canEditCategory, canMoveChannel, onChannelDragStart, onChannelDrop, pendingDeletions}) {
 const [open, setOpen] = useState(!category.collapsed);
 const dragHandleRef = useRef(null);
 const [isDropTarget, setIsDropTarget] = useState(false);
@@ -3235,13 +3242,13 @@ return (<div style={{...s.catWrap, ...(isDragging ? s.catWrapDragging : {}), ...
     const isDone = ch.status === 'done';
     let hash = '#';
     if(ch.type === 'job') hash = '◆';
-    else if(ch.type === 'materials') hash = '';
-    else if(ch.type === 'calendar') hash = '';
+    else if(ch.type === 'materials') hash = ch.emoji || '';
+    else if(ch.type === 'calendar') hash = ch.emoji || '';
     else if(ch.type === 'incidents-bin') { const t = INCIDENT_TYPES.find(t => t.id === ch.incidentType); hash = t?.emoji || '⚠️'; }
     else if(ch.type === 'ts-overview') hash = '';
     else if(ch.type === 'ts-project') hash = '';
     else if(ch.type === 'roster' || ch.type === 'users' || ch.type === 'company-info') hash = '';
-    else if(ch.type === 'plain') hash = '';
+    else if(ch.type === 'plain') hash = ch.emoji || '';
     const col = ch.type === 'job' && ch.colorId && ch.status !== 'done' ? getColor(ch.colorId) : null;
     const tsCol = ch.type === 'ts-project' && ch.colorId ? getColor(ch.colorId) : null;
     const isDraggable = canMoveChannel && ch.type === 'job';
@@ -3255,6 +3262,7 @@ return (<div style={{...s.catWrap, ...(isDragging ? s.catWrapDragging : {}), ...
         title={hasPendingDeletion ? 'Pending deletion · awaiting admin approval' : undefined}>
         <span style={s.chanHash}>{hash}</span>
         <span style={{...s.chanName, ...(isActive?s.chanNameActive:{})}}>{ch.name}</span>
+        {canEditChannel && ['plain','materials','calendar'].includes(ch.type) && ch.id !== 'crew-announcements' && ch.id !== 'crew-calendar' && ch.name !== '📢announcements' && ch.name !== '📅work-calendar' && !hasPendingDeletion && (<button title="Edit channel" onClick={(e)=>{e.stopPropagation();onEditChannel && onEditChannel(ch);}} style={{background:'none',border:'none',color:'var(--text-faint)',cursor:'pointer',fontSize:11,padding:'0 2px',opacity:0.7}}>✎</button>)}
         {hasPendingDeletion && <span style={{fontSize:9,color:'var(--warn)',fontFamily:"'JetBrains Mono',monospace",fontWeight:700}}>🔔 PENDING</span>}
         {col && !hasPendingDeletion && <span style={{...s.chanDot, background:col.bar}}/>}
         {tsCol && <span style={{...s.chanDot, background:tsCol.bar}}/>}
@@ -3291,7 +3299,7 @@ return null;
 
 function App({company, currentUser, onLogout, onUpdateCompany}) {
 const k = (key) => 'th-co-' + company.id + ':' + key;
-const [theme, setTheme] = useTheme(); const [data, setData] = useStorage(k('data'), null); const [notes, setNotes] = useStorage(k('notes'), {}); const [incidents, setIncidents] = useStorage(k('incidents'), []); const [calendarEntries, setCalendarEntries] = useStorage(k('calendar'), null); const [crew, setCrew] = useStorage(k('crew'), []); const [timesheets, setTimesheets] = useStorage(k('timesheets'), null); const [toolboxes, setToolboxes] = useStorage(k('toolboxes'), []); const [ramsEntries, setRamsEntries] = useStorage(k('rams'), []); const [pendingDeletions, setPendingDeletions] = useStorage(k('pendingDeletions'), []); const [activeId, setActiveId] = useState(null); const [activeThreadId, setActiveThreadId] = useState('info'); const [showJobWizard, setShowJobWizard] = useState(false); const [editingJob, setEditingJob] = useState(null); const [jobTargetCategory, setJobTargetCategory] = useState('cat-run'); const [showShare, setShowShare] = useState(false); const [showCategoryModal, setShowCategoryModal] = useState(false); const [editingCategory, setEditingCategory] = useState(null); const [showTypePicker, setShowTypePicker] = useState(null); const [showAddThread, setShowAddThread] = useState(false); const [incidentModal, setIncidentModal] = useState(null); const [showAddMaterial, setShowAddMaterial] = useState(false); const [bookingModal, setBookingModal] = useState(null); const [sharedChannel, setSharedChannel] = useState(null); const [showTimesheetModal, setShowTimesheetModal] = useState(null); const [draggedCategory, setDraggedCategory] = useState(null); const [toolboxModal, setToolboxModal] = useState(null); const [viewToolbox, setViewToolbox] = useState(null); const [ramsModal, setRamsModal] = useState(null); const [viewRams, setViewRams] = useState(null); const [showApprovalsModal, setShowApprovalsModal] = useState(false); const [viewIncident, setViewIncident] = useState(null); const [viewTimesheet, setViewTimesheet] = useState(null);
+const [theme, setTheme] = useTheme(); const [data, setData] = useStorage(k('data'), null); const [notes, setNotes] = useStorage(k('notes'), {}); const [incidents, setIncidents] = useStorage(k('incidents'), []); const [calendarEntries, setCalendarEntries] = useStorage(k('calendar'), null); const [crew, setCrew] = useStorage(k('crew'), []); const [timesheets, setTimesheets] = useStorage(k('timesheets'), null); const [toolboxes, setToolboxes] = useStorage(k('toolboxes'), []); const [ramsEntries, setRamsEntries] = useStorage(k('rams'), []); const [pendingDeletions, setPendingDeletions] = useStorage(k('pendingDeletions'), []); const [activeId, setActiveId] = useState(null); const [activeThreadId, setActiveThreadId] = useState('info'); const [showJobWizard, setShowJobWizard] = useState(false); const [editingJob, setEditingJob] = useState(null); const [jobTargetCategory, setJobTargetCategory] = useState('cat-run'); const [showShare, setShowShare] = useState(false); const [showCategoryModal, setShowCategoryModal] = useState(false); const [editingCategory, setEditingCategory] = useState(null); const [editingChannel, setEditingChannel] = useState(null); const [showTypePicker, setShowTypePicker] = useState(null); const [showAddThread, setShowAddThread] = useState(false); const [incidentModal, setIncidentModal] = useState(null); const [showAddMaterial, setShowAddMaterial] = useState(false); const [bookingModal, setBookingModal] = useState(null); const [sharedChannel, setSharedChannel] = useState(null); const [showTimesheetModal, setShowTimesheetModal] = useState(null); const [draggedCategory, setDraggedCategory] = useState(null); const [toolboxModal, setToolboxModal] = useState(null); const [viewToolbox, setViewToolbox] = useState(null); const [ramsModal, setRamsModal] = useState(null); const [viewRams, setViewRams] = useState(null); const [showApprovalsModal, setShowApprovalsModal] = useState(false); const [viewIncident, setViewIncident] = useState(null); const [viewTimesheet, setViewTimesheet] = useState(null);
 const [isOnline, setIsOnline] = useState(typeof navigator==='undefined' || navigator.onLine!==false);
 const isMobile = useIsMobile();
 const [drawerOpen, setDrawerOpen] = useState(false);
@@ -3553,8 +3561,10 @@ return (<div style={s.app}>
   <div style={s.projList}>
     {sortedCategories.map(cat => (
       <CategoryBlock key={cat.id} category={cat} channels={channelsByCat(cat.id)} activeId={activeId} onSelect={selectChannel} getColor={getColor}
-        onAddChannel={(c) => { if(c.system === 'running') { setEditingJob(null); setJobTargetCategory(c.id); setShowJobWizard(true); if(isMobile) setDrawerOpen(false); } else { setShowTypePicker({category: c}); if(isMobile) setDrawerOpen(false); } }}
+        onAddChannel={(c) => { if(c.system === 'running') { setEditingJob(null); setJobTargetCategory(c.id); setShowJobWizard(true); if(isMobile) setDrawerOpen(false); } else { setShowTypePicker({category: c, initialType: c.id === 'cat-tools' ? 'materials' : null}); if(isMobile) setDrawerOpen(false); } }}
         onEditCategory={(c) => { setEditingCategory(c); setShowCategoryModal(true); if(isMobile) setDrawerOpen(false); }}
+        onEditChannel={(ch) => { setEditingChannel(ch); if(isMobile) setDrawerOpen(false); }}
+        canEditChannel={currentUser.role === 'manager'}
         onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop} isDragging={draggedCategory?.id === cat.id}
         canAddChannel={currentUser.role === 'manager' || currentUser.role === 'team_leader'}
         canEditCategory={currentUser.role === 'manager'}
@@ -3619,7 +3629,8 @@ return (<div style={s.app}>
 {showJobWizard && (<JobWizard onClose={() => setShowJobWizard(false)} onSave={saveJob} editing={editingJob} company={company}/>)}
 {showShare && channel && channel.type === 'job' && (<ShareModal channel={channel} onClose={() => setShowShare(false)}/>)}
 {showCategoryModal && (<CategoryModal onClose={() => { setShowCategoryModal(false); setEditingCategory(null); }} onSave={saveCategory} onDelete={(cat) => { if (isSuperAdmin) { if (confirm(`Delete category "${cat.name}"?\n\nProjects in this category will move to "Projects on Run". Other channels will be deleted.`)) { updateData(prev => { const runCat = prev.categories.find(c => c.system === 'running'); const channels = prev.channels.map(c => c.categoryId === cat.id ? (c.type === 'job' ? {...c, categoryId: runCat?.id || c.categoryId} : null) : c).filter(Boolean); return {...prev, categories: prev.categories.filter(c => c.id !== cat.id), channels}; }); } } else { requestDeletion('category', cat.id, cat.name); } }} editing={editingCategory} isAdmin={isSuperAdmin}/>)}
-{showTypePicker && (<ChannelTypePicker onClose={() => setShowTypePicker(null)} categoryName={showTypePicker.category.name} onPickJob={() => { setJobTargetCategory(showTypePicker.category.id); setEditingJob(null); setShowTypePicker(null); setShowJobWizard(true); }} onPickPlain={(name) => createPlainChannel(showTypePicker.category.id, name)} onPickMaterials={(name) => createMaterialsChannel(showTypePicker.category.id, name)} onPickCalendar={(name) => createCalendarChannel(showTypePicker.category.id, name)}/>)}
+{editingChannel && (<ChannelEditModal channel={editingChannel} onClose={() => setEditingChannel(null)} onSave={(updated) => { updateData(prev => ({...prev, channels: prev.channels.map(c => c.id === updated.id ? {...c, name: updated.name, emoji: updated.emoji} : c)})); }}/>)}
+{showTypePicker && (<ChannelTypePicker onClose={() => setShowTypePicker(null)} categoryName={showTypePicker.category.name} initialType={showTypePicker.initialType} onPickJob={() => { setJobTargetCategory(showTypePicker.category.id); setEditingJob(null); setShowTypePicker(null); setShowJobWizard(true); }} onPickPlain={(name) => createPlainChannel(showTypePicker.category.id, name)} onPickMaterials={(name) => createMaterialsChannel(showTypePicker.category.id, name)} onPickCalendar={(name) => createCalendarChannel(showTypePicker.category.id, name)}/>)}
 {showAddThread && <AddThreadModal onClose={() => setShowAddThread(false)} onSave={addCustomThread}/>}
 {incidentModal && (() => {
   const editingInc = incidentModal.editing;
