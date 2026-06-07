@@ -638,7 +638,7 @@ return (<div style={s.overlay} onClick={onClose}><div style={{...s.modal,...s.mo
 function ChannelTypePicker({onClose, onPickJob, onPickPlain, onPickMaterials, onPickCalendar, categoryName, initialType}) {
 const [step, setStep] = useState(initialType ? 'name' : 'pick'); const [pickedType, setPickedType] = useState(initialType || null); const [chanName, setChanName] = useState('');
 const submit = () => { if(!chanName.trim()) return; if(pickedType === 'plain') onPickPlain(chanName.trim()); if(pickedType === 'materials') onPickMaterials(chanName.trim()); if(pickedType === 'calendar') onPickCalendar(chanName.trim()); };
-if(step === 'name') { return (<div style={s.overlay} onClick={onClose}><div style={{...s.modal,...s.modalSm}} onClick={e=>e.stopPropagation()}><div style={s.modalHeader}><div><div style={s.modalKicker}>New · {pickedType} channel</div><div style={s.modalTitle}>Channel name</div></div><button style={s.closeBtn} onClick={onClose}>×</button></div><div style={s.modalBody}><label style={s.label}>Channel name *</label><input style={s.input} value={chanName} onChange={e=>setChanName(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter'&&chanName.trim())submit();}}/></div><div style={s.modalFooter}><button style={s.cancelBtn} onClick={()=> initialType ? onClose() : setStep('pick')}>{initialType ? 'Cancel' : '← Back'}</button><button style={{...s.primaryBtn, opacity:chanName.trim()?1:0.5}} disabled={!chanName.trim()} onClick={submit}>Create</button></div></div></div>); }
+if(step === 'name') { return (<div style={s.overlay} onClick={onClose}><div style={{...s.modal,...s.modalSm}} onClick={e=>e.stopPropagation()}><div style={s.modalHeader}><div><div style={s.modalKicker}>New · {pickedType === 'materials' ? 'Materials list' : pickedType + ' channel'}</div><div style={s.modalTitle}>{pickedType === 'materials' ? 'List name' : 'Channel name'}</div></div><button style={s.closeBtn} onClick={onClose}>×</button></div><div style={s.modalBody}><label style={s.label}>{pickedType === 'materials' ? 'List name' : 'Channel name'} *</label><input style={s.input} value={chanName} onChange={e=>setChanName(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter'&&chanName.trim())submit();}}/></div><div style={s.modalFooter}><button style={s.cancelBtn} onClick={()=> initialType ? onClose() : setStep('pick')}>{initialType ? 'Cancel' : '← Back'}</button><button style={{...s.primaryBtn, opacity:chanName.trim()?1:0.5}} disabled={!chanName.trim()} onClick={submit}>Create</button></div></div></div>); }
 return (<div style={s.overlay} onClick={onClose}><div style={s.modal} onClick={e=>e.stopPropagation()}><div style={s.modalHeader}><div><div style={s.modalKicker}>New Channel · in {categoryName}</div><div style={s.modalTitle}>Pick channel type</div></div><button style={s.closeBtn} onClick={onClose}>×</button></div><div style={s.modalBody}><div style={s.typeRow}><div style={s.typeCard} onClick={onPickJob}><div style={s.typeIcon}>🏗️</div><div style={s.typeTitle}>Job channel</div><div style={s.typeDesc}>Full rope access job — wizard, info, toolbox, RAMS, surveys.</div></div><div style={s.typeCard} onClick={()=>{setPickedType('plain');setStep('name');}}><div style={s.typeIcon}>💬</div><div style={s.typeTitle}>Plain channel</div><div style={s.typeDesc}>Notes feed for chat, announcements, reference.</div></div></div><div style={s.typeRow}><div style={s.typeCard} onClick={()=>{setPickedType('materials');setStep('name');}}><div style={s.typeIcon}>🧰</div><div style={s.typeTitle}>Materials list</div><div style={s.typeDesc}>Checkable list of items — tools, paint, fixings, etc.</div></div><div style={s.typeCard} onClick={()=>{setPickedType('calendar');setStep('name');}}><div style={s.typeIcon}>📅</div><div style={s.typeTitle}>Calendar</div><div style={s.typeDesc}>Month view — schedule jobs and crew per day.</div></div></div></div><div style={s.modalFooter}><button style={s.cancelBtn} onClick={onClose}>Cancel</button></div></div></div>);
 }
 
@@ -774,10 +774,12 @@ return (<div style={s.overlay} onClick={onClose}>
 </div>);
 }
 
-function AddMaterialModal({onClose, onSave}) {
+function AddMaterialModal({onClose, onSave, existing}) {
 const [name, setName] = useState(''); const [qty, setQty] = useState('');
-const save = () => { if(!name.trim()) return; onSave({id:'m-'+Date.now().toString(36), name:name.trim(), qty:qty.trim(), done:false}); onClose(); };
-return (<div style={s.overlay} onClick={onClose}><div style={{...s.modal,...s.modalSm}} onClick={e=>e.stopPropagation()}><div style={s.modalHeader}><div><div style={s.modalKicker}>New · Material</div><div style={s.modalTitle}>Add item</div></div><button style={s.closeBtn} onClick={onClose}>×</button></div><div style={s.modalBody}><label style={s.label}>Item *</label><input style={s.input} value={name} onChange={e=>setName(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter'&&name.trim())save();}}/><label style={s.label}>Quantity (optional)</label><input style={s.input} value={qty} onChange={e=>setQty(e.target.value)} placeholder="e.g. 4 × 10L"/></div><div style={s.modalFooter}><button style={s.cancelBtn} onClick={onClose}>Cancel</button><button style={{...s.primaryBtn, opacity:name.trim()?1:0.5}} disabled={!name.trim()} onClick={save}>Add item</button></div></div></div>);
+const names = (existing||[]).map(n => (n||'').trim().toLowerCase());
+const dup = !!name.trim() && names.includes(name.trim().toLowerCase());
+const save = () => { if(!name.trim() || dup) return; onSave({id:'m-'+Date.now().toString(36), name:name.trim(), qty:qty.trim(), done:false}); onClose(); };
+return (<div style={s.overlay} onClick={onClose}><div style={{...s.modal,...s.modalSm}} onClick={e=>e.stopPropagation()}><div style={s.modalHeader}><div><div style={s.modalKicker}>New · Material</div><div style={s.modalTitle}>Add item</div></div><button style={s.closeBtn} onClick={onClose}>×</button></div><div style={s.modalBody}><label style={s.label}>Item *</label><input style={{...s.input, ...(dup?{borderColor:'var(--danger)'}:{})}} value={name} onChange={e=>setName(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter'&&name.trim()&&!dup)save();}}/>{dup && <div style={{fontSize:12,color:'var(--danger)',marginTop:-8,marginBottom:10}}>⚠️ "{name.trim()}" is already in this list.</div>}<label style={s.label}>Quantity (optional)</label><input style={s.input} value={qty} onChange={e=>setQty(e.target.value)} placeholder="e.g. 4 × 10L"/></div><div style={s.modalFooter}><button style={s.cancelBtn} onClick={onClose}>Cancel</button><button style={{...s.primaryBtn, opacity:(name.trim()&&!dup)?1:0.5}} disabled={!name.trim()||dup} onClick={save}>Add item</button></div></div></div>);
 }
 
 function TimesheetEntryModal({onClose, onSave, crew, projectId, projectName, editing, timesheets, onAddCrew, currentUser, company, calendarEntries}) {
@@ -1429,6 +1431,14 @@ const items = stored.slice().sort((a,b)=> (a.name||'').localeCompare((b.name||''
 const [editingId, setEditingId] = useState(null);
 const [draftName, setDraftName] = useState('');
 const [draftQty, setDraftQty] = useState('');
+const [flashId, setFlashId] = useState(null);
+const prevIds = useRef(stored.map(m => m.id));
+useEffect(() => {
+  const now = stored.map(m => m.id);
+  const added = now.find(id => !prevIds.current.includes(id));
+  prevIds.current = now;
+  if (added) { setFlashId(added); const t = setTimeout(() => setFlashId(null), 3000); return () => clearTimeout(t); }
+}, [stored.length]);
 const toggle = (id) => onUpdate(stored.map(m => m.id === id ? {...m, done:!m.done} : m));
 const remove = (id) => { if(confirm('Remove this item?')) onUpdate(stored.filter(m => m.id !== id)); };
 const startEdit = (m) => { setEditingId(m.id); setDraftName(m.name||''); setDraftQty(m.qty||''); };
@@ -1445,7 +1455,7 @@ return (
     </div>
     <div style={{flex:1,overflowY:'auto'}}>
       {items.length === 0 ? <div style={{...s.empty,height:'60%'}}><span style={s.emptyIcon}>🧰</span><span style={s.emptyText}>No items yet</span></div> : items.map(m => (
-        <div key={m.id} style={s.matRow}>
+        <div key={m.id} style={{...s.matRow, ...(flashId===m.id ? {background:'var(--success-bg)', borderColor:'var(--success)', transition:'background 0.6s ease, border-color 0.6s ease'} : {transition:'background 0.6s ease, border-color 0.6s ease'})}}>
           {editingId === m.id ? (
             <>
               <input autoFocus style={{...s.input,marginBottom:0,flex:1}} value={draftName} onChange={e=>setDraftName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')saveEdit(m.id);if(e.key==='Escape')cancelEdit();}} placeholder="Item name"/>
@@ -3470,7 +3480,7 @@ const submitIncident = (inc) => setIncidents(prev => {
 });
 const deleteIncident = (id) => { if(confirm('Delete this report?')) setIncidents(prev => prev.filter(i => i.id !== id)); };
 const updateMaterials = (newList) => { if(!channel) return; updateData(prev => ({...prev, channels: prev.channels.map(c => c.id === channel.id ? {...c, materials:newList} : c)})); };
-const addMaterial = (item) => { if(!channel) return; updateData(prev => ({...prev, channels: prev.channels.map(c => c.id === channel.id ? {...c, materials:[...(c.materials || []), item]} : c)})); };
+const addMaterial = (item) => { if(!channel) return; const names = (channel.materials||[]).map(m => (m.name||'').trim().toLowerCase()); if(names.includes((item.name||'').trim().toLowerCase())) return; updateData(prev => ({...prev, channels: prev.channels.map(c => c.id === channel.id ? {...c, materials:[...(c.materials || []), item]} : c)})); };
 const saveBooking = (entry) => { setCalendarEntries(prev => { const list = prev || []; const idx = list.findIndex(e => e.id === entry.id); if(idx >= 0) { const n = [...list]; n[idx] = entry; return n; } return [entry, ...list]; }); setBookingModal(null); };
 const deleteBooking = (id) => setCalendarEntries(prev => (prev || []).filter(e => e.id !== id));
 const saveTimesheetEntry = (entry) => { setTimesheets(prev => { const list = prev || []; const idx = list.findIndex(e => e.id === entry.id); if(idx >= 0) { const n = [...list]; n[idx] = entry; return n; } return [entry, ...list]; }); };
@@ -3641,7 +3651,7 @@ return (<div style={s.app}>
   if (!incProject || (incProject.type && incProject.type !== 'job')) return null;
   return <IncidentFormModal onClose={() => setIncidentModal(null)} onSave={(inc)=>{submitIncident(inc); setIncidentModal(null);}} project={incProject} editing={editingInc} currentUser={currentUser} calendarEntries={calendarEntries||[]} company={company}/>;
 })()}
-{showAddMaterial && <AddMaterialModal onClose={() => setShowAddMaterial(false)} onSave={addMaterial}/>}
+{showAddMaterial && <AddMaterialModal onClose={() => setShowAddMaterial(false)} onSave={addMaterial} existing={(channel?.materials || []).map(m => m.name)}/>}
 {bookingModal && (<CalendarBookingModal onClose={() => setBookingModal(null)} onSave={saveBooking} jobChannels={allJobs.filter(j => j.status !== 'done')} allChannels={allChannelsIncludingDynamic} getCategory={getCategory} editing={bookingModal.editing} defaultDate={bookingModal.defaultDate} company={company}/>)}
 {showTimesheetModal && (<TimesheetEntryModal onClose={() => setShowTimesheetModal(null)} onSave={(entry)=>{saveTimesheetEntry(entry); setShowTimesheetModal(null);}} crew={crew} projectId={showTimesheetModal.projectId} projectName={showTimesheetModal.projectName} editing={showTimesheetModal.editing} timesheets={timesheets || []} onAddCrew={addCrew} currentUser={currentUser} company={company} calendarEntries={calendarEntries||[]}/>)}
 {toolboxModal && channel && channel.type === 'job' && (<ToolboxFormModal onClose={()=>setToolboxModal(null)} onSave={saveToolbox} project={channel} company={company} currentUser={currentUser} editing={toolboxModal.editing} calendarEntries={calendarEntries||[]}/>)}
@@ -3675,10 +3685,26 @@ const [email, setEmail] = useState('');
 const [password, setPassword] = useState('');
 const [selectedCompanyId, setSelectedCompanyId] = useState('');
 const [error, setError] = useState('');
+const [remember, setRemember] = useState(false);
+
+// Load remembered login (temporary, for quick testing — stored in this browser only).
+useEffect(() => {
+  try {
+    const r = JSON.parse(localStorage.getItem('th-remember') || 'null');
+    if (r) { setRemember(true); if (r.email) setEmail(r.email); if (r.companyId) setSelectedCompanyId(r.companyId); }
+  } catch (e) {}
+}, []);
+const persistRemember = (companyId) => {
+  try {
+    if (remember) localStorage.setItem('th-remember', JSON.stringify({email: email.trim(), companyId: companyId || ''}));
+    else localStorage.removeItem('th-remember');
+  } catch (e) {}
+};
 
 const submitAdmin = () => {
   setError('');
   if (email.trim().toLowerCase() === 'admin@tradehub.com' && password === 'admin123') {
+    persistRemember('');
     onLoginAdmin();
   } else {
     setError('Invalid admin credentials.');
@@ -3693,8 +3719,11 @@ const submitCompany = () => {
   const user = (company.users || []).find(u => u.email && u.email.toLowerCase() === email.trim().toLowerCase());
   if (!user) { setError('User not found in this company.'); return; }
   if ((user.password || '1234') !== password) { setError('Wrong password.'); return; }
+  persistRemember(company.id);
   onLoginCompany(company, user);
 };
+
+const rememberRow = (<label style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'var(--text-dim)',margin:'2px 0 14px',cursor:'pointer',userSelect:'none'}}><input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)} style={{cursor:'pointer'}}/>Remember me on this device</label>);
 
 const wrap = {minHeight:'100vh',background:'var(--bg)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px'};
 const card = {background:'var(--bg-panel)',border:'1px solid var(--border)',borderRadius:14,padding:'34px 32px',width:'100%',maxWidth:420,boxShadow:'var(--shadow-lg)'};
@@ -3727,6 +3756,7 @@ return (
     <label style={s.label}>Password</label>
     <input style={s.input} type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" onKeyDown={e=>{if(e.key==='Enter')submitAdmin();}}/>
     {error && <div style={{padding:'8px 12px',background:'var(--danger-bg)',border:'1px solid var(--danger)',borderRadius:6,fontSize:12,color:'var(--danger)',marginBottom:12}}>{error}</div>}
+    {rememberRow}
     <button style={{...s.primaryBtn,width:'100%',padding:'12px 18px',marginBottom:10}} onClick={submitAdmin}>Login as Admin</button>
     <button style={{...s.cancelBtn,width:'100%'}} onClick={()=>{setMode('main');setError('');setEmail('');setPassword('');}}>← Back</button>
   </div>
@@ -3751,6 +3781,7 @@ return (
     <label style={s.label}>Password</label>
     <input style={s.input} type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••" onKeyDown={e=>{if(e.key==='Enter')submitCompany();}}/>
     {error && <div style={{padding:'8px 12px',background:'var(--danger-bg)',border:'1px solid var(--danger)',borderRadius:6,fontSize:12,color:'var(--danger)',marginBottom:12}}>{error}</div>}
+    {rememberRow}
     <button style={{...s.primaryBtn,width:'100%',padding:'12px 18px',marginBottom:10}} onClick={submitCompany}>Login</button>
     <button style={{...s.cancelBtn,width:'100%'}} onClick={()=>{setMode('main');setError('');setEmail('');setPassword('');setSelectedCompanyId('');}}>← Back</button>
   </div>
