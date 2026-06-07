@@ -3691,12 +3691,12 @@ const [remember, setRemember] = useState(false);
 useEffect(() => {
   try {
     const r = JSON.parse(localStorage.getItem('th-remember') || 'null');
-    if (r) { setRemember(true); if (r.email) setEmail(r.email); if (r.companyId) setSelectedCompanyId(r.companyId); }
+    if (r) { setRemember(true); if (r.email) setEmail(r.email); if (r.password) setPassword(r.password); if (r.companyId) setSelectedCompanyId(r.companyId); }
   } catch (e) {}
 }, []);
 const persistRemember = (companyId) => {
   try {
-    if (remember) localStorage.setItem('th-remember', JSON.stringify({email: email.trim(), companyId: companyId || ''}));
+    if (remember) localStorage.setItem('th-remember', JSON.stringify({email: email.trim(), password: password, companyId: companyId || ''}));
     else localStorage.removeItem('th-remember');
   } catch (e) {}
 };
