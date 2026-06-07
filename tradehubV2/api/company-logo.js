@@ -53,29 +53,16 @@ export default async function handler(req, res) {
     for (const u of extractIconsFromHtml(html, domain)) candidates.push({ source: 'site', url: u });
   } catch (_) { /* no website or blocked -- keep the domain-based name */ }
 
-  // d) Google favicon (always returns something)
+  // d) Icon services that fetch server-side (bypass sites that block bots, e.g. 403/Cloudflare).
+  candidates.push({ source: 'duckduckgo', url: `https://icons.duckduckgo.com/ip3/${domain}.ico` });
   candidates.push({ source: 'favicon', url: `https://www.google.com/s2/favicons?domain=${domain}&sz=128` });
 
-  const best = await firstWorking(candidates);
+  const best = await downloadFirstValidImage(candidates);
   if (!best) {
-    // No logo, but we can still hand back the name.
-    return res.status(200).json({ ok: false, reason: 'not_found', domain, name, message: 'No logo found. Upload it below.' });
+    // Nothing valid (site may block bots). Still hand back the name so the user only uploads a logo.
+    return res.status(200).json({ ok: false, reason: 'not_found', domain, name, message: 'Could not fetch a logo (the site may block it). Upload it below.' });
   }
-
-  // Server-side download (no CORS) and return base64
-  try {
-    const img = await fetch(best.url, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (TradeHub logo fetcher)' } });
-    const type = img.headers.get('content-type') || 'image/png';
-    const buf = Buffer.from(await img.arrayBuffer());
-    if (buf.length > 500 * 1024) {
-      return res.status(200).json({ ok: false, reason: 'too_big', domain, name, bestSource: best.source, url: best.url,
-        message: 'Found the logo but it is >500KB. Upload a smaller version below.' });
-    }
-    const dataUrl = `data:${type};base64,${buf.toString('base64')}`;
-    return res.status(200).json({ ok: true, domain, name, bestSource: best.source, dataUrl, bytes: buf.length });
-  } catch (e) {
-    return res.status(200).json({ ok: false, reason: 'download_failed', domain, name, message: 'Found the logo but could not download it. Upload it below.' });
-  }
+  return res.status(200).json({ ok: true, domain, name, bestSource: best.source, dataUrl: best.dataUrl, bytes: best.bytes });
 }
 
 // ---------- helpers ----------
@@ -164,13 +151,38 @@ function absolutize(u, domain) {
   return `https://${domain}/${u}`;
 }
 
-async function firstWorking(candidates) {
+// Reject HTML/JSON error pages and confirm real image bytes (magic numbers).
+function looksLikeImage(buf, type) {
+  if (!buf || buf.length < 60) return false;
+  const head = buf.slice(0, 16);
+  const b = [...head];
+  const ascii = head.toString('latin1');
+  const start = buf.slice(0, 256).toString('latin1').replace(/^\s+/, '').toLowerCase();
+  if (start.startsWith('<!doctype') || start.startsWith('<html') || start.startsWith('{') || start.startsWith('<head')) return false;
+  if ((type && type.includes('svg')) || start.startsWith('<svg') || (start.startsWith('<?xml') && start.includes('<svg'))) return true;
+  if (b[0]===0x89 && b[1]===0x50 && b[2]===0x4e && b[3]===0x47) return true; // PNG
+  if (b[0]===0xff && b[1]===0xd8 && b[2]===0xff) return true;               // JPEG
+  if (ascii.startsWith('GIF8')) return true;                                 // GIF
+  if (ascii.startsWith('RIFF') && buf.slice(8,12).toString('latin1')==='WEBP') return true; // WEBP
+  if (b[0]===0x00 && b[1]===0x00 && b[2]===0x01 && b[3]===0x00) return true; // ICO
+  if (b[0]===0x42 && b[1]===0x4d) return true;                               // BMP
+  return false;
+}
+
+// Try each candidate: download, validate it's a real image, return the first good one.
+async function downloadFirstValidImage(candidates) {
   for (const c of candidates) {
     try {
-      const r = await fetch(c.url, { method: 'HEAD', redirect: 'follow' });
-      const type = r.headers.get('content-type') || '';
-      if (r.ok && type.startsWith('image/')) return c;
+      const img = await fetch(c.url, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TradeHubBot/1.0)', 'Accept': 'image/avif,image/webp,image/png,image/svg+xml,image/*,*/*' } });
+      if (!img.ok) continue;
+      const rawType = (img.headers.get('content-type') || '').toLowerCase();
+      const buf = Buffer.from(await img.arrayBuffer());
+      if (buf.length > 500 * 1024) continue; // too big — try next
+      if (!looksLikeImage(buf, rawType)) continue;
+      let outType = rawType.split(';')[0].trim();
+      if (!outType.startsWith('image/')) outType = rawType.includes('svg') ? 'image/svg+xml' : 'image/png';
+      return { dataUrl: `data:${outType};base64,${buf.toString('base64')}`, source: c.source, bytes: buf.length };
     } catch (_) {}
   }
-  return candidates[0] || null;
+  return null;
 }
