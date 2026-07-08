@@ -1556,7 +1556,7 @@ return (<div>
   {totalConflictDays > 0 && (
     <div style={{padding:'10px 14px',background:'var(--danger-bg)',border:'1px solid var(--danger)',borderRadius:8,marginBottom:12,display:'flex',alignItems:'center',gap:8,fontSize:12,color:'var(--danger)'}}>
       <span style={{fontSize:16}}>⚠</span>
-      <span><b>{totalConflictDays} day{totalConflictDays===1?'':'s'} with double-booked technicians</b> — look for the red rings on pins.</span>
+      <span><b>{totalConflictDays} day{totalConflictDays===1?'':'s'} with double-booked technicians</b> — look for the red triangles on pins.</span>
     </div>
   )}
   {runningWithColor.length > 0 && (
@@ -1567,9 +1567,11 @@ return (<div>
   )}
   <div style={{...s.legend, marginBottom:12}}>
     <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:9,color:'var(--text-dim)',textTransform:'uppercase',letterSpacing:0.14,marginRight:4}}>Rings:</span>
+    <span style={{...s.legendItem, cursor:'default'}}>
+      <span style={{width:11,height:11,borderRadius:'50%',background:'var(--bg-raised)',boxShadow:'0 0 0 2px #f59e0b',display:'inline-block',flexShrink:0}}/>
+      You
+    </span>
     {[
-      {label:'You', color:'#f59e0b'},
-      {label:'Double-booked', color:'#dc2626'},
       {label:'Manager', color:roleRings.manager},
       {label:'Team leader', color:roleRings.team_leader},
       {label:'Crew', color:roleRings.crew},
@@ -1579,6 +1581,10 @@ return (<div>
         {r.label}
       </span>
     ))}
+    <span style={{...s.legendItem, cursor:'default'}}>
+      <span style={{width:0,height:0,borderLeft:'5px solid transparent',borderRight:'5px solid transparent',borderBottom:'9px solid #dc2626',display:'inline-block',flexShrink:0,filter:'drop-shadow(0 0 1px #fff)'}}/>
+      Double-booked
+    </span>
   </div>
   <div style={{...s.calGrid, gridTemplateColumns:'repeat(7,minmax(0,1fr))'}}>
     {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d} style={s.calHeadCell}>{d}</div>)}
@@ -2543,14 +2549,13 @@ function getRoleForName(name, company){ const u = (company?.users || []).find(u 
 function InitialsPin({name, projectColor, size=22, title, doubleBooked, isMe, roleColor}) {
   const color = getPinColorForName(name);
   const initials = getInitials(name);
-  const needsWhiteRing = !doubleBooked && !isMe && !roleColor && projectColor && colorsAreSimilar(color.bg, projectColor);
+  const needsWhiteRing = !isMe && !roleColor && projectColor && colorsAreSimilar(color.bg, projectColor);
 
-  // Priority: red (double-booking) > gold (your own pin) > role ring (manager/TL/crew) > white (contrast)
+  // Ring priority: gold (your own pin) > role ring (manager/TL/crew) > white (contrast).
+  // Double-booking no longer uses a red ring (red can be picked as a role color) —
+  // it shows a warning triangle badge on the pin's top-right corner instead.
   let boxShadow;
-  if (doubleBooked) {
-    // Red double ring — critical warning
-    boxShadow = '0 0 0 2px #fff, 0 0 0 4px #dc2626, 0 1px 2px rgba(0,0,0,0.3)';
-  } else if (isMe) {
+  if (isMe) {
     // Golden ring — "that's me"
     boxShadow = '0 0 0 2.5px #f59e0b, 0 0 0 4px rgba(245,158,11,0.35), 0 1px 2px rgba(0,0,0,0.2)';
   } else if (roleColor) {
@@ -2563,10 +2568,12 @@ function InitialsPin({name, projectColor, size=22, title, doubleBooked, isMe, ro
     boxShadow = '0 1px 3px rgba(0,0,0,0.25), inset 0 0 0 1.5px rgba(255,255,255,0.25)';
   }
 
+  const triSize = Math.max(8, Math.round(size * 0.5));
   return (
     <span
       title={title || name}
       style={{
+        position:'relative',
         display:'inline-flex',
         alignItems:'center',
         justifyContent:'center',
@@ -2585,6 +2592,21 @@ function InitialsPin({name, projectColor, size=22, title, doubleBooked, isMe, ro
         transition:'box-shadow 0.15s',
       }}>
       {initials}
+      {doubleBooked && (
+        <span style={{
+          position:'absolute',
+          top:-Math.round(triSize*0.55),
+          right:-Math.round(triSize*0.4),
+          width:0,
+          height:0,
+          borderLeft:(triSize/2)+'px solid transparent',
+          borderRight:(triSize/2)+'px solid transparent',
+          borderBottom:triSize+'px solid #dc2626',
+          filter:'drop-shadow(0 0 1.5px #fff) drop-shadow(0 1px 1.5px rgba(0,0,0,0.45))',
+          pointerEvents:'none',
+          zIndex:2,
+        }}/>
+      )}
     </span>
   );
 }
