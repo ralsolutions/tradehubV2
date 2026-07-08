@@ -224,6 +224,9 @@ serverName:{fontSize:14,fontWeight:700,color:'var(--text)',letterSpacing:0.2,mar
 themeToggle:{width:28,height:28,borderRadius:6,border:'1px solid var(--border)',background:'var(--bg-raised)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0,color:'var(--text-muted)'},
 actionBar:{padding:'10px 12px 8px',display:'flex',gap:6},
 actionBtn:{flex:1,padding:'8px 8px',background:'var(--bg-raised)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text-muted)',fontSize:11,fontWeight:600,cursor:'pointer',letterSpacing:0.2,transition:'all 0.12s'},
+clockBtn:{width:'100%',padding:'13px 14px',borderRadius:8,fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.5,display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'all 0.15s'},
+clockBtnActive:{background:'var(--success)',border:'1px solid var(--success)',color:'#fff',boxShadow:'0 2px 12px rgba(5,150,105,0.4)'},
+clockBtnIdle:{background:'var(--accent-bg)',border:'1px solid var(--accent)',color:'var(--accent-text)',opacity:0.9},
 projList:{flex:1,overflowY:'auto',padding:'4px 8px 12px'},
 catWrap:{marginBottom:6,cursor:'grab',userSelect:'none'},
 catWrapDragging:{opacity:0.4},
@@ -248,7 +251,7 @@ headerKicker:{fontFamily:"'JetBrains Mono',monospace",fontSize:9,fontWeight:600,
 headerTitle:{fontSize:20,fontWeight:700,color:'var(--text)',letterSpacing:-0.2,display:'flex',alignItems:'center',gap:10},
 headerMeta:{fontSize:12,color:'var(--text-dim)',marginTop:3},
 headerColorDot:{width:12,height:12,borderRadius:3,flexShrink:0},
-badge:{display:'inline-flex',alignItems:'center',gap:5,padding:'5px 11px',borderRadius:6,fontSize:11,fontWeight:600,fontFamily:"'JetBrains Mono',monospace",letterSpacing:0.2,textTransform:'uppercase',border:'1px solid transparent'},
+badge:{display:'inline-flex',alignItems:'center',gap:5,padding:'5px 11px',borderRadius:6,fontSize:11,fontWeight:600,fontFamily:"'JetBrains Mono',monospace",letterSpacing:0.2,textTransform:'uppercase',border:'1px solid transparent',whiteSpace:'nowrap',flexShrink:0},
 badgeGhost:{background:'var(--bg-raised)',color:'var(--text-muted)',border:'1px solid var(--border)',cursor:'pointer'},
 badgePrimary:{background:'var(--accent-bg)',color:'var(--accent-text)',border:'1px solid var(--accent)',cursor:'pointer'},
 badgeSuccess:{background:'var(--success-bg)',color:'var(--success)',border:'1px solid var(--success)'},
@@ -3189,7 +3192,112 @@ return (<div style={{maxWidth:560}}>
 </div>);
 }
 
-function ThreadView({channel, thread, notes, setNotes, allChannels, incidents, onIncidentSubmit, onIncidentDelete, onIncidentEdit, onMentionClick, onJumpToProject, onSetChat, onUpdateMaterials, onAddMaterial, calendarEntries, onNewBooking, onEditBooking, onDeleteBooking, getCategory, allJobs, timesheets, onAddTimesheet, onEditTimesheet, onViewTimesheet, onConfirmTimesheet, onDeleteTimesheet, onBulkConfirmTimesheet, crew, onAddCrew, onRemoveCrew, isMobile, company, currentUser, onUpdateCompany, toolboxes, onNewToolbox, onViewToolbox, onDeleteToolbox, ramsEntries, onNewRams, onViewRams, onDeleteRams}) {
+function RecycleBinView({deletedChannels, onRestore, onPurge, getCategory, currentUser}) {
+const isManager = currentUser?.role === 'manager' || currentUser?.id === 'admin-shadow';
+const RETENTION_DAYS = 30;
+const items = [...deletedChannels].sort((a,b) => (b.deletedAt||'').localeCompare(a.deletedAt||''));
+const daysLeft = (deletedAt) => {
+  const elapsed = (Date.now() - new Date(deletedAt).getTime()) / (24*60*60*1000);
+  return Math.max(0, Math.ceil(RETENTION_DAYS - elapsed));
+};
+if (!isManager) return (<div style={{...s.empty,height:'60%'}}><span style={s.emptyIcon}>🔒</span><span style={s.emptyText}>Only managers can access the recycle bin</span></div>);
+return (<div style={{height:'100%',display:'flex',flexDirection:'column'}}>
+  <div style={{marginBottom:16}}>
+    <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:9,color:'var(--text-dim)',textTransform:'uppercase',letterSpacing:0.14,marginBottom:4}}>{items.length} deleted project{items.length===1?'':'s'}</div>
+    <div style={{fontSize:13,color:'var(--text-dim)'}}>Projects stay here for {RETENTION_DAYS} days, then they are deleted forever — timesheets, incidents and bookings included.</div>
+  </div>
+  <div style={{flex:1,overflowY:'auto'}}>
+    {items.length === 0
+      ? <div style={{...s.empty,height:'60%'}}><span style={s.emptyIcon}>🗑</span><span style={s.emptyText}>Recycle bin is empty</span></div>
+      : items.map(ch => {
+        const cat = getCategory(ch.categoryId);
+        const left = daysLeft(ch.deletedAt);
+        const urgent = left <= 5;
+        return (<div key={ch.id} style={{display:'flex',gap:12,padding:'12px 14px',background:'var(--bg-panel)',border:'1px solid var(--border)',borderRadius:8,marginBottom:8,alignItems:'center',boxShadow:'var(--shadow-sm)',flexWrap:'wrap'}}>
+          <div style={{flex:'1 1 180px',minWidth:0}}>
+            <div style={{fontSize:14,fontWeight:700,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>◆ {ch.name}</div>
+            <div style={{fontSize:11,color:'var(--text-dim)',marginTop:2}}>{cat ? `${cat.emoji} ${cat.name}` : 'Category removed'} · deleted by {ch.deletedBy || '—'} on {formatDate((ch.deletedAt||'').slice(0,10))}</div>
+          </div>
+          <span style={{...s.badge, background: urgent ? 'var(--warn-bg)' : 'var(--bg-raised)', border: urgent ? '1px solid var(--warn)' : '1px solid var(--border)', color: urgent ? 'var(--warn)' : 'var(--text-muted)'}}>⏳ {left} day{left===1?'':'s'} left</span>
+          <div style={{display:'flex',gap:6}}>
+            <button style={{...s.badge, background:'var(--success-bg)', border:'1px solid var(--success)', color:'var(--success)', cursor:'pointer'}} onClick={() => onRestore(ch.id)}>↩ Restore</button>
+            <button style={{...s.badge,...s.badgeGhost, cursor:'pointer'}} onClick={() => onPurge(ch.id)}>✕ Delete forever</button>
+          </div>
+        </div>);
+      })
+    }
+  </div>
+</div>);
+}
+
+function ClockModal({mode, currentUser, allJobs, myClock, clockMemory, onClockIn, onClockOut, onClose}) {
+const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+const [initialTime] = useState(nowHM());
+const today = todayISO();
+const isMonday = new Date().getDay() === 1;
+const mem = (clockMemory || {})[currentUser.id];
+// Default project = last one used, except Mondays (weekly reset → pick again)
+const memUsable = mem && allJobs.some(j => j.id === mem.projectId) && !(isMonday && mem.date !== today);
+const [projectId, setProjectId] = useState(mode === 'in' ? (memUsable ? mem.projectId : '') : (myClock?.projectId || ''));
+const [time, setTime] = useState(initialTime);
+const [comment, setComment] = useState('');
+const stale = mode === 'out' && myClock && myClock.date !== today; // forgot to clock out on a previous day
+const edited = time !== initialTime;
+const needsComment = edited || stale;
+const COMMENT_MIN = 10;
+const commentOk = !needsComment || comment.trim().length >= COMMENT_MIN;
+const project = allJobs.find(j => j.id === projectId);
+const isIn = mode === 'in';
+const save = () => {
+  if (isIn && !projectId) return alert('Select a project.');
+  if (!commentOk) return alert(`A comment (min ${COMMENT_MIN} characters) is required when the time is edited${stale ? ' or when closing a forgotten clock-out' : ''}.`);
+  if (isIn) {
+    onClockIn({projectId, projectName: project?.name || '', date: today, startTime: time, startEdited: edited, startComment: comment.trim()});
+  } else {
+    onClockOut({endTime: time, endEdited: edited || !!stale, endComment: comment.trim()});
+  }
+  onClose();
+};
+return (<div style={s.overlay} onClick={onClose}>
+  <div style={{...s.modal, maxWidth:400}} onClick={e=>e.stopPropagation()}>
+    <div style={s.modalHeader}>
+      <div>
+        <div style={s.modalKicker}>Quick clock</div>
+        <div style={{...s.modalTitle, display:'flex', alignItems:'center', gap:8}}>🕐 {isIn ? 'Clock In' : 'Clock Out'}</div>
+      </div>
+      <button style={s.closeBtn} onClick={onClose}>×</button>
+    </div>
+    <div style={s.modalBody}>
+      {stale && (<div style={{padding:'8px 12px',background:'var(--warn-bg)',border:'1px solid var(--warn)',borderRadius:6,fontSize:12,color:'var(--warn)',marginBottom:14,fontWeight:600}}>⚠️ You forgot to clock out on {formatDate(myClock.date)}. Set the real end time and add a comment.</div>)}
+      <label style={s.label}>Worker</label>
+      <input style={{...s.input,opacity:0.7,cursor:'not-allowed'}} value={currentUser.name} disabled/>
+      <label style={s.label}>Project {isIn ? '*' : ''}</label>
+      {isIn
+        ? (<select style={s.input} value={projectId} onChange={e=>setProjectId(e.target.value)}>
+            <option value="">— Select project —</option>
+            {allJobs.filter(j=>j.status!=='done').map(j => <option key={j.id} value={j.id}>{j.name}</option>)}
+          </select>)
+        : (<input style={{...s.input,opacity:0.7,cursor:'not-allowed'}} value={myClock?.projectName || ''} disabled/>)
+      }
+      <label style={s.label}>Date</label>
+      <input style={{...s.input,opacity:0.7,cursor:'not-allowed'}} value={formatDate(isIn ? today : myClock?.date)} disabled/>
+      {!isIn && (<><label style={s.label}>Clocked in at</label><input style={{...s.input,opacity:0.7,cursor:'not-allowed'}} value={myClock?.startTime || ''} disabled/></>)}
+      <label style={s.label}>{isIn ? 'Start time' : 'End time'} *</label>
+      <input type="time" style={s.input} value={time} onChange={e=>setTime(e.target.value)}/>
+      {edited && !stale && (<div style={{fontSize:11,color:'var(--warn)',marginTop:-10,marginBottom:12,fontWeight:600}}>✏️ Time edited — a comment is required and the entry will be flagged for the manager.</div>)}
+      {needsComment && (<>
+        <label style={s.label}>Reason for the change * <span style={{color: commentOk ? 'var(--success)' : 'var(--text-faint)', fontWeight:400}}>({comment.trim().length}/{COMMENT_MIN} min)</span></label>
+        <textarea style={{...s.input,minHeight:60,resize:'vertical'}} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Why is the time different from the real one?"/>
+      </>)}
+      <button style={{...s.clockBtn, ...(isIn ? s.clockBtnActive : {background:'var(--accent)',border:'1px solid var(--accent)',color:'#fff'}), marginTop:6, ...((isIn && !projectId) || !commentOk ? {opacity:0.5,cursor:'not-allowed'} : {})}} onClick={save}>
+        🕐 {isIn ? `CLOCK IN · ${time}` : `CLOCK OUT · ${time}`}
+      </button>
+    </div>
+  </div>
+</div>);
+}
+
+function ThreadView({channel, thread, notes, setNotes, allChannels, incidents, onIncidentSubmit, onIncidentDelete, onIncidentEdit, onMentionClick, onJumpToProject, onSetChat, onUpdateMaterials, onAddMaterial, calendarEntries, onNewBooking, onEditBooking, onDeleteBooking, getCategory, allJobs, timesheets, onAddTimesheet, onEditTimesheet, onViewTimesheet, onConfirmTimesheet, onDeleteTimesheet, onBulkConfirmTimesheet, crew, onAddCrew, onRemoveCrew, isMobile, company, currentUser, onUpdateCompany, toolboxes, onNewToolbox, onViewToolbox, onDeleteToolbox, ramsEntries, onNewRams, onViewRams, onDeleteRams, deletedChannels, onRestoreChannel, onPurgeChannel}) {
 if(channel.type === 'plain') { if(channel.name === '📢announcements') { return <AnnouncementsView channel={channel} notes={notes} setNotes={setNotes} allChannels={allChannels} onMentionClick={onMentionClick} getCategory={getCategory}/>; } return <NotesFeed channelId={channel.id} threadId="main" notes={notes} setNotes={setNotes} placeholder={`Post in ${channel.name}... (type # to mention)`} allChannels={allChannels} onMentionClick={onMentionClick} getCategory={getCategory}/>; }
 if(channel.type === 'materials') return <MaterialsView channel={channel} onUpdate={onUpdateMaterials} onAdd={onAddMaterial}/>;
 if(channel.type === 'calendar') return <CalendarView entries={calendarEntries} jobChannels={allJobs} allChannels={allChannels} getCategory={getCategory} onNewBooking={onNewBooking} onEditBooking={onEditBooking} onDeleteBooking={onDeleteBooking} onJumpToProject={onJumpToProject} onMentionClick={onMentionClick} company={company} currentUser={currentUser}/>;
@@ -3199,6 +3307,7 @@ if(channel.type === 'ts-project') return <TimesheetProjectChannelView projectId=
 if(channel.type === 'roster') return <CrewRosterView crew={crew} onAdd={onAddCrew} onRemove={onRemoveCrew}/>;
 if(channel.type === 'users') return <UsersView company={company} onUpdateCompany={onUpdateCompany} currentUser={currentUser}/>;
 if(channel.type === 'company-info') return <CompanyInfoView company={company} onUpdateCompany={onUpdateCompany}/>;
+if(channel.type === 'recycle-bin') return <RecycleBinView deletedChannels={deletedChannels || []} onRestore={onRestoreChannel} onPurge={onPurgeChannel} getCategory={getCategory} currentUser={currentUser}/>;
 if(thread.id === 'info') return <InfoDisplay channel={channel} canEdit={currentUser?.role==='manager'||currentUser?.role==='team_leader'} onSetChat={onSetChat}/>;
 if(thread.id === 'timesheet') return <ProjectTimesheetView channel={channel} timesheets={timesheets} onAdd={onAddTimesheet} onEdit={onEditTimesheet} onView={onViewTimesheet} onConfirm={onConfirmTimesheet} onDelete={onDeleteTimesheet} onBulkConfirm={onBulkConfirmTimesheet} currentUser={currentUser}/>;
 if(thread.id === 'incidents') return <ProjectIncidentsView channel={channel} incidents={incidents} allChannels={allChannels} onMentionClick={onMentionClick} onAdd={onIncidentSubmit} onDelete={onIncidentDelete} onEdit={onIncidentEdit} currentUser={currentUser}/>;
@@ -3311,6 +3420,11 @@ function App({company, currentUser, onLogout, onUpdateCompany}) {
 const k = (key) => 'th-co-' + company.id + ':' + key;
 const [theme, setTheme] = useTheme(); const [data, setData] = useStorage(k('data'), null); const [notes, setNotes] = useStorage(k('notes'), {}); const [incidents, setIncidents] = useStorage(k('incidents'), []); const [calendarEntries, setCalendarEntries] = useStorage(k('calendar'), null); const [crew, setCrew] = useStorage(k('crew'), []); const [timesheets, setTimesheets] = useStorage(k('timesheets'), null); const [toolboxes, setToolboxes] = useStorage(k('toolboxes'), []); const [ramsEntries, setRamsEntries] = useStorage(k('rams'), []); const [pendingDeletions, setPendingDeletions] = useStorage(k('pendingDeletions'), []); const [activeId, setActiveId] = useState(null); const [activeThreadId, setActiveThreadId] = useState('info'); const [showJobWizard, setShowJobWizard] = useState(false); const [editingJob, setEditingJob] = useState(null); const [jobTargetCategory, setJobTargetCategory] = useState('cat-run'); const [showShare, setShowShare] = useState(false); const [showCategoryModal, setShowCategoryModal] = useState(false); const [editingCategory, setEditingCategory] = useState(null); const [editingChannel, setEditingChannel] = useState(null); const [showTypePicker, setShowTypePicker] = useState(null); const [showAddThread, setShowAddThread] = useState(false); const [incidentModal, setIncidentModal] = useState(null); const [showAddMaterial, setShowAddMaterial] = useState(false); const [bookingModal, setBookingModal] = useState(null); const [sharedChannel, setSharedChannel] = useState(null); const [showTimesheetModal, setShowTimesheetModal] = useState(null); const [draggedCategory, setDraggedCategory] = useState(null); const [toolboxModal, setToolboxModal] = useState(null); const [viewToolbox, setViewToolbox] = useState(null); const [ramsModal, setRamsModal] = useState(null); const [viewRams, setViewRams] = useState(null); const [showApprovalsModal, setShowApprovalsModal] = useState(false); const [viewIncident, setViewIncident] = useState(null); const [viewTimesheet, setViewTimesheet] = useState(null);
 const [isOnline, setIsOnline] = useState(typeof navigator==='undefined' || navigator.onLine!==false);
+// Quick clock in/out — per-user active clock + last-project memory
+const [clockState, setClockState] = useStorage(k('clockState'), {});
+const [clockMemory, setClockMemory] = useStorage(k('clockMemory'), {});
+const [clockModal, setClockModal] = useState(null);
+const myClock = (clockState || {})[currentUser.id] || null;
 const isMobile = useIsMobile();
 const [drawerOpen, setDrawerOpen] = useState(false);
 useEffect(() => { if(!isMobile) setDrawerOpen(false); }, [isMobile]);
@@ -3336,6 +3450,10 @@ useEffect(() => {
     next = {...next, channels:[...next.channels, {id:'settings-company',type:'company-info',name:'🏢company-info',categoryId:'cat-settings',createdAt:new Date().toISOString()}]};
     changed = true;
   }
+  if (!next.channels.find(c => c.id === 'settings-recycle')) {
+    next = {...next, channels:[...next.channels, {id:'settings-recycle',type:'recycle-bin',name:'🗑recycle-bin',categoryId:'cat-settings',createdAt:new Date().toISOString()}]};
+    changed = true;
+  }
   // Hide legacy crew-roster (kept for backward-compat but hidden)
   const oldRoster = next.channels.find(c => c.id === 'crew-roster');
   if (oldRoster && !oldRoster._hidden) {
@@ -3346,12 +3464,24 @@ useEffect(() => {
 }, [data]);
 useEffect(() => { const checkHash = () => { const hash = window.location.hash; if(hash.startsWith('#p=')) { const decoded = decodeObj(hash.slice(3)); if(decoded) setSharedChannel(decoded); } else setSharedChannel(null); }; checkHash(); window.addEventListener('hashchange', checkHash); return () => window.removeEventListener('hashchange', checkHash); }, []);
 if(sharedChannel) return <SharedView channel={sharedChannel} onExit={() => { window.location.hash = ''; setSharedChannel(null); }}/>;
-const d = data || {categories:[],channels:[]}; const allJobs = d.channels.filter(c => c.type === 'job');
+// Recycle bin: purge soft-deleted projects older than 30 days (and their related data)
+useEffect(() => {
+  if (!data) return;
+  const THIRTY_DAYS = 30*24*60*60*1000;
+  const now = Date.now();
+  const expired = data.channels.filter(c => c.deletedAt && (now - new Date(c.deletedAt).getTime()) > THIRTY_DAYS).map(c => c.id);
+  if (expired.length === 0) return;
+  setData(prev => ({...prev, channels: prev.channels.filter(c => !expired.includes(c.id))}));
+  setTimesheets(prev => (prev||[]).filter(t => !expired.includes(t.projectId)));
+  setIncidents(prev => (prev||[]).filter(i => !expired.includes(i.projectId)));
+  setCalendarEntries(prev => (prev||[]).filter(e => !expired.includes(e.projectId)));
+}, [data]);
+const d = data || {categories:[],channels:[]}; const allJobs = d.channels.filter(c => c.type === 'job' && !c.deletedAt); const deletedJobs = d.channels.filter(c => c.type === 'job' && c.deletedAt);
 const sortedCategories = useMemo(() => [...d.categories].filter(c => !c.managerOnly || currentUser.role === 'manager').sort((a, b) => (a.order ?? 999) - (b.order ?? 999)), [d.categories, currentUser.role]);
-const tsProjectChannels = useMemo(() => { const projectIds = [...new Set((timesheets||[]).map(t => t.projectId))]; return projectIds.map(pid => { const project = allJobs.find(j => j.id === pid); return { id: 'ts-proj-' + pid, type: 'ts-project', name: project?.name || 'Unknown project', categoryId: 'cat-timesheets', _projectId: pid, colorId: project?.colorId }; }); }, [timesheets, allJobs]);
-const allChannelsIncludingDynamic = useMemo(() => [...d.channels, ...tsProjectChannels], [d.channels, tsProjectChannels]);
+const tsProjectChannels = useMemo(() => { const projectIds = [...new Set((timesheets||[]).map(t => t.projectId))]; return projectIds.map(pid => { const raw = d.channels.find(j => j.id === pid && j.type === 'job'); if (raw?.deletedAt) return null; const project = raw; return { id: 'ts-proj-' + pid, type: 'ts-project', name: project?.name || 'Unknown project', categoryId: 'cat-timesheets', _projectId: pid, colorId: project?.colorId }; }).filter(Boolean); }, [timesheets, d.channels]);
+const allChannelsIncludingDynamic = useMemo(() => [...d.channels.filter(c => !c.deletedAt), ...tsProjectChannels], [d.channels, tsProjectChannels]);
 const channel = d.channels.find(c => c.id === activeId) || tsProjectChannels.find(c => c.id === activeId); const getCategory = (id) => d.categories.find(c => c.id === id); const updateData = (fn) => setData(prev => fn(prev || {categories:[],channels:[]}));
-const channelsByCat = (catId) => { const regular = d.channels.filter(c => c.categoryId === catId && !c._hidden); if(catId === 'cat-timesheets') return [...regular, ...tsProjectChannels]; return regular; };
+const channelsByCat = (catId) => { const regular = d.channels.filter(c => c.categoryId === catId && !c._hidden && !c.deletedAt); if(catId === 'cat-timesheets') return [...regular, ...tsProjectChannels]; return regular; };
 const handleDragStart = (e, category) => { setDraggedCategory(category); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', category.id); };
 const handleDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
 const handleDrop = (e, targetCategory) => { e.preventDefault(); if(!draggedCategory || draggedCategory.id === targetCategory.id) return; updateData(prev => { const categories = [...prev.categories]; const draggedIdx = categories.findIndex(c => c.id === draggedCategory.id); const targetIdx = categories.findIndex(c => c.id === targetCategory.id); if(draggedIdx === -1 || targetIdx === -1) return prev; const [removed] = categories.splice(draggedIdx, 1); categories.splice(targetIdx, 0, removed); categories.forEach((c, i) => { c.order = i; }); return {...prev, categories}; }); setDraggedCategory(null); };
@@ -3413,7 +3543,7 @@ const requestDeletion = (kind, id, name) => {
 
 const deleteChannel = (id) => {
   const ch = d.channels.find(c => c.id === id);
-  if(ch?.type === 'incidents-bin' || ch?.type === 'ts-overview') return alert('System channels cannot be deleted.');
+  if(ch?.type === 'incidents-bin' || ch?.type === 'ts-overview' || ch?.type === 'recycle-bin') return alert('System channels cannot be deleted.');
   // Project channels (jobs) require admin approval
   if (ch?.type === 'job' && !isSuperAdmin) {
     return requestDeletion('channel', id, ch.name);
@@ -3422,16 +3552,47 @@ const deleteChannel = (id) => {
   if (currentUser?.role !== 'manager' && !isSuperAdmin) {
     return alert('Only managers and admins can delete channels.');
   }
-  if(!confirm('Delete this channel?')) return;
-  updateData(prev => ({...prev, channels: prev.channels.filter(c => c.id !== id)}));
+  if(ch?.type === 'job') {
+    if(!confirm('Move this project to the recycle bin? It can be restored within 30 days.')) return;
+    // Soft delete: keep the project (and its related data) recoverable for 30 days
+    updateData(prev => ({...prev, channels: prev.channels.map(c => c.id === id ? {...c, deletedAt: new Date().toISOString(), deletedBy: currentUser?.name || '—'} : c)}));
+  } else {
+    if(!confirm('Delete this channel?')) return;
+    updateData(prev => ({...prev, channels: prev.channels.filter(c => c.id !== id)}));
+  }
   if(activeId === id) setActiveId(null);
+};
+// Recycle bin: restore a soft-deleted project (back to its category, or Projects on Run if it's gone)
+const restoreChannel = (id) => {
+  updateData(prev => {
+    const runCat = prev.categories.find(c => c.system === 'running');
+    return {...prev, channels: prev.channels.map(c => {
+      if (c.id !== id) return c;
+      const {deletedAt, deletedBy, ...rest} = c;
+      const catExists = prev.categories.some(cat => cat.id === c.categoryId);
+      return {...rest, categoryId: catExists ? c.categoryId : (runCat?.id || c.categoryId)};
+    })};
+  });
+};
+// Recycle bin: permanently delete a project and its related data
+const purgeChannel = (id) => {
+  if(!confirm('Delete this project FOREVER? This cannot be undone.')) return;
+  updateData(prev => ({...prev, channels: prev.channels.filter(c => c.id !== id)}));
+  setTimesheets(prev => (prev||[]).filter(t => t.projectId !== id));
+  setIncidents(prev => (prev||[]).filter(i => i.projectId !== id));
+  setCalendarEntries(prev => (prev||[]).filter(e => e.projectId !== id));
 };
 // Process approval/rejection (admin only)
 const approveDeletion = (pdId) => {
   const pd = (pendingDeletions || []).find(p => p.id === pdId);
   if (!pd) return;
   if (pd.kind === 'channel') {
-    updateData(prev => ({...prev, channels: prev.channels.filter(c => c.id !== pd.targetId)}));
+    updateData(prev => {
+      const target = prev.channels.find(c => c.id === pd.targetId);
+      // Projects go to the recycle bin (soft delete, restorable for 30 days); other channels are removed
+      if (target?.type === 'job') return {...prev, channels: prev.channels.map(c => c.id === pd.targetId ? {...c, deletedAt: new Date().toISOString(), deletedBy: pd.requestedBy || currentUser?.name || '—'} : c)};
+      return {...prev, channels: prev.channels.filter(c => c.id !== pd.targetId)};
+    });
     if (activeId === pd.targetId) setActiveId(null);
   } else if (pd.kind === 'category') {
     updateData(prev => {
@@ -3484,6 +3645,37 @@ const addMaterial = (item) => { if(!channel) return; const names = (channel.mate
 const saveBooking = (entry) => { setCalendarEntries(prev => { const list = prev || []; const idx = list.findIndex(e => e.id === entry.id); if(idx >= 0) { const n = [...list]; n[idx] = entry; return n; } return [entry, ...list]; }); setBookingModal(null); };
 const deleteBooking = (id) => setCalendarEntries(prev => (prev || []).filter(e => e.id !== id));
 const saveTimesheetEntry = (entry) => { setTimesheets(prev => { const list = prev || []; const idx = list.findIndex(e => e.id === entry.id); if(idx >= 0) { const n = [...list]; n[idx] = entry; return n; } return [entry, ...list]; }); };
+// Quick clock handlers
+const doClockIn = (info) => {
+  // info: {projectId, projectName, date, startTime, startEdited, startComment}
+  setClockState(prev => ({...(prev||{}), [currentUser.id]: {...info, userId: currentUser.id, userName: currentUser.name, startedAt: new Date().toISOString()}}));
+  setClockMemory(prev => ({...(prev||{}), [currentUser.id]: {projectId: info.projectId, projectName: info.projectName, date: info.date}}));
+};
+const doClockOut = (info) => {
+  // info: {endTime, endEdited, endComment}
+  const c = (clockState || {})[currentUser.id];
+  if (!c) return;
+  const now = new Date().toISOString();
+  const hours = calcHours(c.startTime, info.endTime);
+  const editHistory = [];
+  if (c.startEdited && c.startComment) editHistory.push({editedAt: c.startedAt || now, editedBy: currentUser.name, fields:['startTime'], justification: c.startComment});
+  if (info.endEdited && info.endComment) editHistory.push({editedAt: now, editedBy: currentUser.name, fields:['endTime'], justification: info.endComment});
+  const entry = {
+    id: 'ts-'+Date.now().toString(36),
+    projectId: c.projectId, projectName: c.projectName,
+    workerName: currentUser.name,
+    date: c.date, startTime: c.startTime, endTime: info.endTime, hours,
+    description: '⏱ Quick clock',
+    status: 'pending',
+    createdAt: now, createdBy: currentUser.name,
+    clockGenerated: true,
+    startEditedByUser: !!c.startEdited,
+    endEditedByUser: !!info.endEdited,
+    editHistory, fieldHistory: {},
+  };
+  setTimesheets(prev => [entry, ...(prev||[])]);
+  setClockState(prev => { const n = {...(prev||{})}; delete n[currentUser.id]; return n; });
+};
 const confirmTimesheetEntry = (id) => { setTimesheets(prev => (prev||[]).map(e => e.id === id ? {...e, status:'confirmed'} : e)); };
 const deleteTimesheetEntry = (id) => { if(confirm('Delete this timesheet entry?')) setTimesheets(prev => (prev||[]).filter(e => e.id !== id)); };
 const bulkConfirmTimesheet = () => { if(!channel) return; setTimesheets(prev => (prev||[]).map(e => e.projectId === channel.id && e.status === 'pending' ? {...e, status:'confirmed'} : e)); };
@@ -3507,6 +3699,11 @@ const headerStyle = isMobile ? {...s.header, ...s.headerMobile} : s.header;
 const headerKickerStyle = isMobile ? {...s.headerKicker, ...s.headerKickerMobile} : s.headerKicker;
 const headerTitleStyle = isMobile ? {...s.headerTitle, ...s.headerTitleMobile} : s.headerTitle;
 const headerMetaStyle = isMobile ? {...s.headerMeta, ...s.headerMetaMobile} : s.headerMeta;
+// Mobile: project title takes the full first row; action buttons wrap to a horizontally-scrollable second row
+const headerTitleWrapStyle = isMobile ? {...s.headerTitleWrap, flex:'1 1 0', minWidth:0} : s.headerTitleWrap;
+const headerActionsStyle = isMobile
+  ? {display:'flex',gap:6,alignItems:'center',width:'100%',flexWrap:'nowrap',overflowX:'auto',WebkitOverflowScrolling:'touch',paddingBottom:2}
+  : {display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'};
 const threadBarStyle = isMobile ? {...s.threadBar, ...s.threadBarMobile} : s.threadBar;
 const contentStyle = isRamsTab ? s.contentNoPad : (isMobile ? {...s.content, ...s.contentMobile} : s.content);
 
@@ -3562,12 +3759,14 @@ return (<div style={s.app}>
       </div>
     );
   })()}
-  {(currentUser.role === 'manager' || currentUser.role === 'team_leader') && (
-    <div style={s.actionBar}>
-      <button style={s.actionBtn} onClick={() => { setEditingJob(null); setJobTargetCategory('cat-run'); setShowJobWizard(true); if(isMobile) setDrawerOpen(false); }}>+ NEW PROJECT</button>
-      {currentUser.role === 'manager' && <button style={s.actionBtn} onClick={() => { setEditingCategory(null); setShowCategoryModal(true); if(isMobile) setDrawerOpen(false); }}>+ CATEGORY</button>}
-    </div>
-  )}
+  <div style={s.actionBar}>
+    <button
+      style={{...s.clockBtn, ...(myClock ? s.clockBtnActive : s.clockBtnIdle)}}
+      onClick={() => { setClockModal({mode: myClock ? 'out' : 'in'}); if(isMobile) setDrawerOpen(false); }}
+      title={myClock ? `Clocked in at ${myClock.startTime} — ${myClock.projectName}` : 'Clock in to a project'}>
+      🕐 {myClock ? `CLOCK OUT · IN ${myClock.startTime}` : 'CLOCK IN'}
+    </button>
+  </div>
   <div style={s.projList}>
     {sortedCategories.map(cat => (
       <CategoryBlock key={cat.id} category={cat} channels={channelsByCat(cat.id)} activeId={activeId} onSelect={selectChannel} getColor={getColor}
@@ -3584,7 +3783,13 @@ return (<div style={s.app}>
         pendingDeletions={pendingDeletions || []}/>
     ))}
   </div>
-  <div style={{padding:'8px 12px 12px',borderTop:'1px solid var(--border)'}}>
+  {(currentUser.role === 'manager' || currentUser.role === 'team_leader') && (
+    <div style={{...s.actionBar, borderTop:'1px solid var(--border)', paddingTop:8, paddingBottom:0}}>
+      <button style={s.actionBtn} onClick={() => { setEditingJob(null); setJobTargetCategory('cat-run'); setShowJobWizard(true); if(isMobile) setDrawerOpen(false); }}>+ NEW PROJECT</button>
+      {currentUser.role === 'manager' && <button style={s.actionBtn} onClick={() => { setEditingCategory(null); setShowCategoryModal(true); if(isMobile) setDrawerOpen(false); }}>+ CATEGORY</button>}
+    </div>
+  )}
+  <div style={{padding:'8px 12px 12px',borderTop:(currentUser.role === 'manager' || currentUser.role === 'team_leader')?'none':'1px solid var(--border)'}}>
     <InstallButton/>
   </div>
 </div>
@@ -3602,12 +3807,12 @@ return (<div style={s.app}>
   ) : (<>
     <div style={headerStyle}>
       {isMobile && <button style={s.burgerBtn} onClick={()=>setDrawerOpen(true)} aria-label="Open menu">☰</button>}
-      <div style={s.headerTitleWrap}>
+      <div style={headerTitleWrapStyle}>
         <div style={headerKickerStyle}>{currentCategory ? `${currentCategory.emoji} ${currentCategory.name}` : ''}{channel.status === 'done' && ' · done'}</div>
         <div style={headerTitleStyle}>{channelColor && <span style={{...s.headerColorDot, background:channelColor.bar}}/>}{channel.type === 'ts-project' ? '🏢 ' + channel.name : channel.name}</div>
-        <div style={headerMetaStyle}>{channel.type === 'job' ? `${channel.address || 'No address'} · Started ${formatDate(channel.startDate)}` : channel.name === '📢announcements' ? 'Company-wide announcements — join the chat group' : channel.type === 'materials' ? 'Materials list' : channel.type === 'calendar' ? 'Work calendar — bookings & crew scheduling' : channel.type === 'incidents-bin' ? 'All ' + channel.name + ' reports across projects' : channel.type === 'ts-overview' ? 'View hours per worker and project — filter by date range for invoicing' : channel.type === 'ts-project' ? "All workers' hours on this project" : channel.type === 'users' ? 'Manage user accounts and roles' : channel.type === 'company-info' ? 'Company name and logo settings' : channel.type === 'roster' ? 'Manage crew members — names appear in timesheet dropdowns' : 'Plain channel'}</div>
+        <div style={headerMetaStyle}>{channel.type === 'job' ? `${channel.address || 'No address'} · Started ${formatDate(channel.startDate)}` : channel.name === '📢announcements' ? 'Company-wide announcements — join the chat group' : channel.type === 'materials' ? 'Materials list' : channel.type === 'calendar' ? 'Work calendar — bookings & crew scheduling' : channel.type === 'incidents-bin' ? 'All ' + channel.name + ' reports across projects' : channel.type === 'ts-overview' ? 'View hours per worker and project — filter by date range for invoicing' : channel.type === 'ts-project' ? "All workers' hours on this project" : channel.type === 'users' ? 'Manage user accounts and roles' : channel.type === 'company-info' ? 'Company name and logo settings' : channel.type === 'recycle-bin' ? 'Deleted projects — restore within 30 days before they are gone forever' : channel.type === 'roster' ? 'Manage crew members — names appear in timesheet dropdowns' : 'Plain channel'}</div>
       </div>
-      <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+      <div style={headerActionsStyle}>
         {channel.type === 'job' && channel.whatsapp && (<a href={channel.whatsapp} target="_blank" rel="noreferrer" style={{...s.badge,...s.badgeSuccess,textDecoration:'none'}}>💬 Chat</a>)}
         {channel.type !== 'job' && channel.whatsappLink && (<a href={channel.whatsappLink} target="_blank" rel="noreferrer" style={{...s.badge,...s.badgeSuccess,textDecoration:'none'}}>💬 Chat group</a>)}
         {channel.type === 'plain' && !channel.whatsappLink && currentUser.role !== 'crew' && (<button style={{...s.badge,...s.badgeGhost}} onClick={() => { const link = prompt('Add your chat group link (WhatsApp, Telegram, Discord, etc.):'); if(link && link.trim()) updateData(prev => ({...prev, channels: prev.channels.map(c => c.id === channel.id ? {...c, whatsappLink: link.trim()} : c)})); }}>💬 Add chat group</button>)}
@@ -3616,7 +3821,7 @@ return (<div style={s.app}>
           {(currentUser.role === 'manager' || currentUser.role === 'team_leader') && <button style={{...s.badge,...s.badgeGhost}} onClick={() => toggleStatus(channel.id)}>{channel.status === 'done' ? '↻ Re-open' : '✓ Done'}</button>}
           {(currentUser.role === 'manager' || currentUser.role === 'team_leader') && <button style={{...s.badge,...s.badgeGhost}} onClick={() => { setEditingJob(channel); setShowJobWizard(true); }}>✏ Edit</button>}
         </>)}
-        {channel.type !== 'incidents-bin' && channel.type !== 'ts-overview' && channel.type !== 'ts-project' && channel.type !== 'roster' && channel.type !== 'users' && channel.type !== 'company-info' && currentUser.role === 'manager' && (<button style={{...s.badge,...s.badgeGhost}} onClick={() => deleteChannel(channel.id)}>🗑</button>)}
+        {channel.type !== 'incidents-bin' && channel.type !== 'ts-overview' && channel.type !== 'ts-project' && channel.type !== 'roster' && channel.type !== 'users' && channel.type !== 'company-info' && channel.type !== 'recycle-bin' && currentUser.role === 'manager' && (<button style={{...s.badge,...s.badgeGhost}} onClick={() => deleteChannel(channel.id)}>🗑</button>)}
       </div>
     </div>
     {channel.type === 'job' && (
@@ -3632,10 +3837,11 @@ return (<div style={s.app}>
       </div>
     )}
     <div style={contentStyle}>
-      <ThreadView channel={channel} thread={currentThread} notes={notes} setNotes={setNotes} allChannels={allChannelsIncludingDynamic} incidents={incidents} onIncidentSubmit={() => setIncidentModal({})} onIncidentDelete={deleteIncident} onIncidentEdit={(inc)=>setIncidentModal({editing:inc})} onMentionClick={handleMentionClick} onJumpToProject={selectChannel} onSetChat={(link)=>updateData(prev=>({...prev, channels: prev.channels.map(c=>c.id===channel.id?{...c, whatsapp:link}:c)}))} onUpdateMaterials={updateMaterials} onAddMaterial={() => setShowAddMaterial(true)} calendarEntries={calendarEntries || []} onNewBooking={(date) => setBookingModal({defaultDate: date})} onEditBooking={(entry) => setBookingModal({editing: entry})} onDeleteBooking={deleteBooking} getCategory={getCategory} allJobs={allJobs} timesheets={timesheets || []} onAddTimesheet={() => setShowTimesheetModal({projectId:channel.id, projectName:channel.name})} onEditTimesheet={(e)=>setShowTimesheetModal({projectId:e.projectId, projectName:e.projectName, editing:e})} onViewTimesheet={(e)=>setViewTimesheet(e)} onConfirmTimesheet={confirmTimesheetEntry} onDeleteTimesheet={deleteTimesheetEntry} onBulkConfirmTimesheet={bulkConfirmTimesheet} crew={crew} onAddCrew={addCrew} onRemoveCrew={removeCrew} isMobile={isMobile} company={company} currentUser={currentUser} onUpdateCompany={onUpdateCompany} toolboxes={toolboxes} onNewToolbox={()=>setToolboxModal({})} onViewToolbox={(tb)=>setViewToolbox(tb)} onDeleteToolbox={deleteToolbox} ramsEntries={ramsEntries} onNewRams={()=>setRamsModal({})} onViewRams={(r)=>setViewRams(r)} onDeleteRams={deleteRams}/>
+      <ThreadView channel={channel} thread={currentThread} notes={notes} setNotes={setNotes} allChannels={allChannelsIncludingDynamic} incidents={incidents} onIncidentSubmit={() => setIncidentModal({})} onIncidentDelete={deleteIncident} onIncidentEdit={(inc)=>setIncidentModal({editing:inc})} onMentionClick={handleMentionClick} onJumpToProject={selectChannel} onSetChat={(link)=>updateData(prev=>({...prev, channels: prev.channels.map(c=>c.id===channel.id?{...c, whatsapp:link}:c)}))} onUpdateMaterials={updateMaterials} onAddMaterial={() => setShowAddMaterial(true)} calendarEntries={calendarEntries || []} onNewBooking={(date) => setBookingModal({defaultDate: date})} onEditBooking={(entry) => setBookingModal({editing: entry})} onDeleteBooking={deleteBooking} getCategory={getCategory} allJobs={allJobs} timesheets={timesheets || []} onAddTimesheet={() => setShowTimesheetModal({projectId:channel.id, projectName:channel.name})} onEditTimesheet={(e)=>setShowTimesheetModal({projectId:e.projectId, projectName:e.projectName, editing:e})} onViewTimesheet={(e)=>setViewTimesheet(e)} onConfirmTimesheet={confirmTimesheetEntry} onDeleteTimesheet={deleteTimesheetEntry} onBulkConfirmTimesheet={bulkConfirmTimesheet} crew={crew} onAddCrew={addCrew} onRemoveCrew={removeCrew} isMobile={isMobile} company={company} currentUser={currentUser} onUpdateCompany={onUpdateCompany} toolboxes={toolboxes} onNewToolbox={()=>setToolboxModal({})} onViewToolbox={(tb)=>setViewToolbox(tb)} onDeleteToolbox={deleteToolbox} ramsEntries={ramsEntries} onNewRams={()=>setRamsModal({})} onViewRams={(r)=>setViewRams(r)} onDeleteRams={deleteRams} deletedChannels={deletedJobs} onRestoreChannel={restoreChannel} onPurgeChannel={purgeChannel}/>
     </div>
   </>)}
 </div>
+{clockModal && (<ClockModal mode={clockModal.mode} currentUser={currentUser} allJobs={allJobs} myClock={myClock} clockMemory={clockMemory} onClockIn={doClockIn} onClockOut={doClockOut} onClose={() => setClockModal(null)}/>)}
 {showJobWizard && (<JobWizard onClose={() => setShowJobWizard(false)} onSave={saveJob} editing={editingJob} company={company}/>)}
 {showShare && channel && channel.type === 'job' && (<ShareModal channel={channel} onClose={() => setShowShare(false)}/>)}
 {showCategoryModal && (<CategoryModal onClose={() => { setShowCategoryModal(false); setEditingCategory(null); }} onSave={saveCategory} onDelete={(cat) => { if (isSuperAdmin) { if (confirm(`Delete category "${cat.name}"?\n\nProjects in this category will move to "Projects on Run". Other channels will be deleted.`)) { updateData(prev => { const runCat = prev.categories.find(c => c.system === 'running'); const channels = prev.channels.map(c => c.categoryId === cat.id ? (c.type === 'job' ? {...c, categoryId: runCat?.id || c.categoryId} : null) : c).filter(Boolean); return {...prev, categories: prev.categories.filter(c => c.id !== cat.id), channels}; }); } } else { requestDeletion('category', cat.id, cat.name); } }} editing={editingCategory} isAdmin={isSuperAdmin}/>)}
