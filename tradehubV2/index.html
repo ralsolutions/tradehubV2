@@ -2595,8 +2595,9 @@ function InitialsPin({name, projectColor, size=22, title, doubleBooked, isMe, ro
       {doubleBooked && (
         <span style={{
           position:'absolute',
-          top:-Math.round(triSize*0.55),
-          right:-Math.round(triSize*0.4),
+          top:-Math.round(triSize*0.75),
+          left:'50%',
+          transform:'translateX(-50%)',
           width:0,
           height:0,
           borderLeft:(triSize/2)+'px solid transparent',
@@ -3288,8 +3289,9 @@ return (<div style={{height:'100%',display:'flex',flexDirection:'column'}}>
 }
 
 function ClockModal({mode, currentUser, allJobs, myClock, clockMemory, onClockIn, onClockOut, onClose}) {
-const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
-const [initialTime] = useState(nowHM());
+// Current time rounded to the nearest 10 minutes (minutes picker moves in 10-min steps)
+const roundedNowHM = () => { const d = new Date(); let m = Math.round(d.getMinutes()/10)*10; let h = d.getHours(); if (m === 60) { m = 0; h = (h+1)%24; } return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'); };
+const [initialTime] = useState(roundedNowHM());
 const today = todayISO();
 const isMonday = new Date().getDay() === 1;
 const mem = (clockMemory || {})[currentUser.id];
@@ -3344,7 +3346,26 @@ return (<div style={s.overlay} onClick={onClose}>
       <input style={{...s.input,opacity:0.7,cursor:'not-allowed'}} value={formatDate(isIn ? today : myClock?.date)} disabled/>
       {!isIn && (<><label style={s.label}>Clocked in at</label><input style={{...s.input,opacity:0.7,cursor:'not-allowed'}} value={myClock?.startTime || ''} disabled/></>)}
       <label style={s.label}>{isIn ? 'Start time' : 'End time'} *</label>
-      <input type="time" style={s.input} value={time} onChange={e=>setTime(e.target.value)}/>
+      {(() => {
+        const [hh, mm] = time.split(':').map(Number);
+        const h12 = (hh % 12) || 12;
+        const ampm = hh < 12 ? 'AM' : 'PM';
+        const setPart = (h12v, mmv, ap) => { let h = h12v % 12; if (ap === 'PM') h += 12; setTime(String(h).padStart(2,'0')+':'+String(mmv).padStart(2,'0')); };
+        const selStyle = {...s.input, flex:1, marginBottom:0, textAlign:'center', fontFamily:"'JetBrains Mono',monospace", fontWeight:700, fontSize:16};
+        return (<div style={{display:'flex',gap:8,alignItems:'center',marginBottom:16}}>
+          <select style={selStyle} value={h12} onChange={e=>setPart(Number(e.target.value), mm, ampm)}>
+            {[1,2,3,4,5,6,7,8,9,10,11,12].map(h => <option key={h} value={h}>{h}</option>)}
+          </select>
+          <span style={{fontWeight:800,color:'var(--text-dim)'}}>:</span>
+          <select style={selStyle} value={mm} onChange={e=>setPart(h12, Number(e.target.value), ampm)}>
+            {[0,10,20,30,40,50].map(m => <option key={m} value={m}>{String(m).padStart(2,'0')}</option>)}
+          </select>
+          <select style={selStyle} value={ampm} onChange={e=>setPart(h12, mm, e.target.value)}>
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+          </select>
+        </div>);
+      })()}
       {!isIn && (<>
         <label style={s.label}>What did you do today? * <span style={{color: descOk ? 'var(--success)' : 'var(--text-faint)', fontWeight:400}}>({desc.trim().length}/{DESC_MIN} min)</span></label>
         <textarea style={{...s.input,minHeight:70,resize:'vertical'}} value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Describe the work done during the day — this goes into the timesheet entry"/>
