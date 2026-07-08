@@ -3321,6 +3321,16 @@ return (<div style={{height:'100%',display:'flex',flexDirection:'column'}}>
 </div>);
 }
 
+// Live elapsed timer since clock-in (counts from the stored start time — edited or not)
+function ElapsedTimer({date, startTime}) {
+const [, force] = useState(0);
+useEffect(() => { const id = setInterval(() => force(n => n+1), 1000); return () => clearInterval(id); }, []);
+const start = new Date(date + 'T' + startTime + ':00');
+const secs = Math.max(0, Math.floor((Date.now() - start.getTime())/1000));
+const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), ss = secs%60;
+return <span style={{fontVariantNumeric:'tabular-nums'}}>{h}:{String(m).padStart(2,'0')}:{String(ss).padStart(2,'0')}</span>;
+}
+
 function ClockModal({mode, currentUser, allJobs, myClock, clockMemory, onClockIn, onClockOut, onClose}) {
 // Current time rounded to the nearest 10 minutes (minutes picker moves in 10-min steps)
 const roundedNowHM = () => { const d = new Date(); let m = Math.round(d.getMinutes()/10)*10; let h = d.getHours(); if (m === 60) { m = 0; h = (h+1)%24; } return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'); };
@@ -3377,7 +3387,11 @@ return (<div style={s.overlay} onClick={onClose}>
       }
       <label style={s.label}>Date</label>
       <input style={{...s.input,opacity:0.7,cursor:'not-allowed'}} value={formatDate(isIn ? today : myClock?.date)} disabled/>
-      {!isIn && (<><label style={s.label}>Clocked in at</label><input style={{...s.input,opacity:0.7,cursor:'not-allowed'}} value={myClock?.startTime || ''} disabled/></>)}
+      {!isIn && (<><label style={s.label}>Clocked in at</label><input style={{...s.input,opacity:0.7,cursor:'not-allowed'}} value={myClock?.startTime || ''} disabled/>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginTop:-10,marginBottom:14,fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:800,color:'var(--success)'}}>
+        <span style={{width:8,height:8,borderRadius:'50%',background:'var(--success)',display:'inline-block'}}/>
+        <ElapsedTimer date={myClock?.date} startTime={myClock?.startTime}/> elapsed
+      </div></>)}
       <label style={s.label}>{isIn ? 'Start time' : 'End time'} *</label>
       {(() => {
         const [hh, mm] = time.split(':').map(Number);
@@ -3892,7 +3906,7 @@ return (<div style={s.app}>
       style={{...s.clockBtn, ...(myClock ? s.clockBtnActive : s.clockBtnIdle)}}
       onClick={() => { setClockModal({mode: myClock ? 'out' : 'in'}); if(isMobile) setDrawerOpen(false); }}
       title={myClock ? `Clocked in at ${myClock.startTime} — ${myClock.projectName}` : 'Clock in to a project'}>
-      🕐 {myClock ? `CLOCK OUT · IN ${myClock.startTime}` : 'CLOCK IN'}
+      🕐 {myClock ? (<>CLOCK OUT · <ElapsedTimer date={myClock.date} startTime={myClock.startTime}/></>) : 'CLOCK IN'}
     </button>
   </div>
   <div style={s.projList}>
