@@ -433,6 +433,8 @@ function formatTime(iso) { if(!iso) return ''; return new Date(iso).toLocaleStri
 // Local YYYY-MM-DD (NOT toISOString, which converts to UTC and shifts the day
 // backwards in +UTC timezones like NZ — that was the calendar off-by-one bug).
 function localISO(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+// Week range [monday, sunday] in local ISO, offset in weeks from the current week (0 = this week, -1 = last week)
+function weekRangeISO(offsetWeeks){ const now = new Date(); const day = (now.getDay()+6)%7; const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + offsetWeeks*7); const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate()+6); return [localISO(mon), localISO(sun)]; }
 function todayISO(){ return localISO(new Date()); }
 function addDays(iso, n) { const d = new Date(iso+'T00:00:00'); d.setDate(d.getDate() + n); return localISO(d); }
 function daysBetween(a, b) { const d1 = new Date(a+'T00:00:00'); const d2 = new Date(b+'T00:00:00'); return Math.round((d2-d1)/(1000*60*60*24)); }
@@ -1003,11 +1005,14 @@ return (<div style={s.overlay} onClick={onClose}>
 function ProjectTimesheetView({channel, timesheets, onAdd, onEdit, onView, onConfirm, onDelete, onBulkConfirm, currentUser}) {
 const isCrew = currentUser?.role === 'crew';
 const canConfirm = currentUser?.role === 'manager' || currentUser?.role === 'team_leader';
+const [dateFrom, setDateFrom] = useState(''); const [dateTo, setDateTo] = useState('');
 const entries = useMemo(() => {
   let list = (timesheets||[]).filter(t=>t.projectId===channel.id);
   if (isCrew) list = list.filter(t => t.workerName === currentUser.name);
+  if (dateFrom) list = list.filter(t => t.date >= dateFrom);
+  if (dateTo) list = list.filter(t => t.date <= dateTo);
   return list.sort((a,b)=> b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime));
-}, [timesheets, channel.id, isCrew, currentUser]);
+}, [timesheets, channel.id, isCrew, currentUser, dateFrom, dateTo]);
 const totalHours = entries.reduce((s,e)=>s+e.hours, 0); const confirmedHours = entries.filter(e=>e.status==='confirmed').reduce((s,e)=>s+e.hours, 0); const pendingCount = entries.filter(e=>e.status==='pending').length;
 const grouped = useMemo(() => { const map = {}; entries.forEach(e => { (map[e.date] = map[e.date] || []).push(e); }); return Object.entries(map).sort((a,b)=>b[0].localeCompare(a[0])); }, [entries]);
 const canEditEntry = (e) => {
@@ -1016,6 +1021,7 @@ const canEditEntry = (e) => {
   return false;
 };
 return (<div style={{height:'100%',display:'flex',flexDirection:'column'}}>
+  <TsDateFilterBar dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo}/>
   <div style={s.tsSummary}>
     <div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>{isCrew ? 'Your hours' : 'Total hours'}</div><div style={s.tsSummaryValue}>{totalHours.toFixed(1)}<span style={s.tsSummaryUnit}>hrs</span></div></div>
     <div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Confirmed</div><div style={{...s.tsSummaryValue,color:'var(--success)'}}>{confirmedHours.toFixed(1)}<span style={s.tsSummaryUnit}>hrs</span></div></div>
@@ -1059,20 +1065,47 @@ return (<div style={{height:'100%',display:'flex',flexDirection:'column'}}>
 </div>);
 }
 
+// Quick date-range presets for timesheet views — weekly / fortnightly, the usual NZ pay cycles
+function TsRangePresets({dateFrom, dateTo, onPick, allowAll}) {
+const presets = [
+  {label:'This week', range: weekRangeISO(0)},
+  {label:'Last week', range: weekRangeISO(-1)},
+  {label:'This fortnight', range: [weekRangeISO(-1)[0], weekRangeISO(0)[1]]},
+  {label:'Last fortnight', range: [weekRangeISO(-3)[0], weekRangeISO(-2)[1]]},
+];
+const btn = (active) => ({padding:'5px 11px',borderRadius:14,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",letterSpacing:0.2,border:'1px solid '+(active?'var(--accent)':'var(--border)'),background:active?'var(--accent-bg)':'var(--bg-raised)',color:active?'var(--accent-text)':'var(--text-muted)',transition:'all 0.12s'});
+return (<div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
+  {allowAll && <button style={btn(!dateFrom && !dateTo)} onClick={()=>onPick('','')}>All</button>}
+  {presets.map(p => { const active = dateFrom===p.range[0] && dateTo===p.range[1]; return <button key={p.label} style={btn(active)} onClick={()=>onPick(p.range[0], p.range[1])}>{p.label}</button>; })}
+</div>);
+}
+
+// From/To filter bar with presets, for the per-project hours views
+function TsDateFilterBar({dateFrom, dateTo, setDateFrom, setDateTo}) {
+return (<div style={{marginBottom:14}}>
+  <TsRangePresets allowAll dateFrom={dateFrom} dateTo={dateTo} onPick={(f,t)=>{setDateFrom(f);setDateTo(t);}}/>
+  <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+    <div style={{flex:'1 1 140px'}}><label style={s.label}>From</label><input type="date" style={{...s.input,marginBottom:0}} value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></div>
+    <div style={{flex:'1 1 140px'}}><label style={s.label}>To</label><input type="date" style={{...s.input,marginBottom:0}} value={dateTo} onChange={e=>setDateTo(e.target.value)}/></div>
+  </div>
+</div>);
+}
+
 function TimesheetOverviewView({timesheets, crew, allJobs}) {
 const [selectedWorker, setSelectedWorker] = useState(''); const [dateFrom, setDateFrom] = useState(monthsAgo(2)); const [dateTo, setDateTo] = useState(todayISO());
 const allWorkers = useMemo(() => { const names = new Set((timesheets||[]).map(t=>t.workerName)); crew.forEach(c=>names.add(c.name)); return [...names].sort(); }, [timesheets, crew]);
 const filtered = useMemo(() => (timesheets||[]).filter(t => (!selectedWorker || t.workerName === selectedWorker) && t.date >= dateFrom && t.date <= dateTo).sort((a,b) => b.date.localeCompare(a.date)), [timesheets, selectedWorker, dateFrom, dateTo]);
 const byProject = useMemo(() => { const map = {}; filtered.forEach(e => { if(!map[e.projectId]) map[e.projectId] = {name:e.projectName, total:0, confirmed:0, entries:[]}; map[e.projectId].total += e.hours; if(e.status==='confirmed') map[e.projectId].confirmed += e.hours; map[e.projectId].entries.push(e); }); return Object.entries(map).sort((a,b) => b[1].total - a[1].total); }, [filtered]);
 const grandTotal = filtered.reduce((s,e)=>s+e.hours, 0); const confirmedTotal = filtered.filter(e=>e.status==='confirmed').reduce((s,e)=>s+e.hours, 0);
-return (<div><div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap',alignItems:'flex-end'}}><div style={{flex:'1 1 180px'}}><label style={s.label}>Worker</label><select style={{...s.input,marginBottom:0}} value={selectedWorker} onChange={e=>setSelectedWorker(e.target.value)}><option value="">All workers</option>{allWorkers.map(n => <option key={n} value={n}>{n}</option>)}</select></div><div style={{flex:'1 1 140px'}}><label style={s.label}>From</label><input style={{...s.input,marginBottom:0}} type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></div><div style={{flex:'1 1 140px'}}><label style={s.label}>To</label><input style={{...s.input,marginBottom:0}} type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/></div></div><div style={s.tsSummary}><div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Total hours</div><div style={s.tsSummaryValue}>{grandTotal.toFixed(1)}<span style={s.tsSummaryUnit}>hrs</span></div></div><div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Confirmed</div><div style={{...s.tsSummaryValue,color:'var(--success)'}}>{confirmedTotal.toFixed(1)}<span style={s.tsSummaryUnit}>hrs</span></div></div><div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Projects</div><div style={s.tsSummaryValue}>{byProject.length}</div></div><div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Entries</div><div style={s.tsSummaryValue}>{filtered.length}</div></div></div>{byProject.length === 0 ? <div style={{...s.empty,height:200}}><span style={s.emptyIcon}>📊</span><span style={s.emptyText}>{selectedWorker ? 'No entries for this worker' : 'No timesheet entries yet'}</span></div> : byProject.map(([pid, data]) => { const job = allJobs.find(j=>j.id===pid); const col = job?.colorId ? getColor(job.colorId) : null; return (<div key={pid} style={{marginBottom:16}}><div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>{col && <span style={{width:10,height:10,borderRadius:2,background:col.bar,flexShrink:0}}/>}<span style={{fontSize:15,fontWeight:700,color:'var(--text)'}}>{data.name}</span><span style={{marginLeft:'auto',fontSize:13,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:'var(--accent-text)'}}>{data.total.toFixed(1)} hrs</span><span style={{fontSize:11,color:'var(--success)',fontFamily:"'JetBrains Mono',monospace"}}>({data.confirmed.toFixed(1)} confirmed)</span></div>{data.entries.map(e => (<div key={e.id} style={{...s.tsRow, padding:'8px 14px'}}><div style={{...s.tsWorker,fontSize:13}}>{e.workerName}</div><div style={{...s.tsTime,fontSize:11}}>{formatDate(e.date)}</div><div style={{...s.tsTime,fontSize:11}}>{e.startTime}→{e.endTime}</div><div style={s.tsHours}>{e.hours}h</div><div style={{...s.tsDesc,fontSize:11}}>{e.description}</div><span style={{...s.tsStatus, fontSize:9, padding:'2px 6px', ...(e.status==='confirmed'?s.tsConfirmed:s.tsPending)}}>{e.status==='confirmed'?'✓':'⏳'}</span></div>))}</div>); })}</div>);
+return (<div><TsRangePresets dateFrom={dateFrom} dateTo={dateTo} onPick={(f,t)=>{setDateFrom(f);setDateTo(t);}}/><div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap',alignItems:'flex-end'}}><div style={{flex:'1 1 180px'}}><label style={s.label}>Worker</label><select style={{...s.input,marginBottom:0}} value={selectedWorker} onChange={e=>setSelectedWorker(e.target.value)}><option value="">All workers</option>{allWorkers.map(n => <option key={n} value={n}>{n}</option>)}</select></div><div style={{flex:'1 1 140px'}}><label style={s.label}>From</label><input style={{...s.input,marginBottom:0}} type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></div><div style={{flex:'1 1 140px'}}><label style={s.label}>To</label><input style={{...s.input,marginBottom:0}} type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/></div></div><div style={s.tsSummary}><div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Total hours</div><div style={s.tsSummaryValue}>{grandTotal.toFixed(1)}<span style={s.tsSummaryUnit}>hrs</span></div></div><div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Confirmed</div><div style={{...s.tsSummaryValue,color:'var(--success)'}}>{confirmedTotal.toFixed(1)}<span style={s.tsSummaryUnit}>hrs</span></div></div><div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Projects</div><div style={s.tsSummaryValue}>{byProject.length}</div></div><div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Entries</div><div style={s.tsSummaryValue}>{filtered.length}</div></div></div>{byProject.length === 0 ? <div style={{...s.empty,height:200}}><span style={s.emptyIcon}>📊</span><span style={s.emptyText}>{selectedWorker ? 'No entries for this worker' : 'No timesheet entries yet'}</span></div> : byProject.map(([pid, data]) => { const job = allJobs.find(j=>j.id===pid); const col = job?.colorId ? getColor(job.colorId) : null; return (<div key={pid} style={{marginBottom:16}}><div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>{col && <span style={{width:10,height:10,borderRadius:2,background:col.bar,flexShrink:0}}/>}<span style={{fontSize:15,fontWeight:700,color:'var(--text)'}}>{data.name}</span><span style={{marginLeft:'auto',fontSize:13,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:'var(--accent-text)'}}>{data.total.toFixed(1)} hrs</span><span style={{fontSize:11,color:'var(--success)',fontFamily:"'JetBrains Mono',monospace"}}>({data.confirmed.toFixed(1)} confirmed)</span></div>{data.entries.map(e => (<div key={e.id} style={{...s.tsRow, padding:'8px 14px'}}><div style={{...s.tsWorker,fontSize:13}}>{e.workerName}</div><div style={{...s.tsTime,fontSize:11}}>{formatDate(e.date)}</div><div style={{...s.tsTime,fontSize:11}}>{e.startTime}→{e.endTime}</div><div style={s.tsHours}>{e.hours}h</div><div style={{...s.tsDesc,fontSize:11}}>{e.description}</div><span style={{...s.tsStatus, fontSize:9, padding:'2px 6px', ...(e.status==='confirmed'?s.tsConfirmed:s.tsPending)}}>{e.status==='confirmed'?'✓':'⏳'}</span></div>))}</div>); })}</div>);
 }
 
 function TimesheetProjectChannelView({projectId, timesheets, crew}) {
-const entries = useMemo(() => (timesheets||[]).filter(t=>t.projectId===projectId).sort((a,b)=>b.date.localeCompare(a.date)), [timesheets, projectId]); const projectName = entries[0]?.projectName || 'Project';
+const [dateFrom, setDateFrom] = useState(''); const [dateTo, setDateTo] = useState('');
+const entries = useMemo(() => (timesheets||[]).filter(t=>t.projectId===projectId && (!dateFrom || t.date >= dateFrom) && (!dateTo || t.date <= dateTo)).sort((a,b)=>b.date.localeCompare(a.date)), [timesheets, projectId, dateFrom, dateTo]); const projectName = entries[0]?.projectName || 'Project';
 const byWorker = useMemo(() => { const map = {}; entries.forEach(e => { if(!map[e.workerName]) map[e.workerName] = {total:0, confirmed:0, count:0}; map[e.workerName].total += e.hours; if(e.status==='confirmed') map[e.workerName].confirmed += e.hours; map[e.workerName].count++; }); return Object.entries(map).sort((a,b)=>b[1].total - a[1].total); }, [entries]);
 const totalHours = entries.reduce((s,e)=>s+e.hours, 0);
-return (<div><div style={s.tsSummary}><div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Total hours</div><div style={s.tsSummaryValue}>{totalHours.toFixed(1)}<span style={s.tsSummaryUnit}>hrs</span></div></div><div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Workers</div><div style={s.tsSummaryValue}>{byWorker.length}</div></div><div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Entries</div><div style={s.tsSummaryValue}>{entries.length}</div></div></div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:'var(--text-dim)',textTransform:'uppercase',letterSpacing:0.14,marginBottom:10}}>Hours per worker</div>{byWorker.map(([name, data]) => (<div key={name} style={s.tsWorkerSummary}><span style={s.tsWorkerName}>👷 {name}</span><span style={{fontSize:11,color:'var(--text-dim)',fontFamily:"'JetBrains Mono',monospace"}}>{data.count} entries</span><span style={{fontSize:11,color:'var(--success)',fontFamily:"'JetBrains Mono',monospace"}}>{data.confirmed.toFixed(1)}h confirmed</span><span style={s.tsWorkerHours}>{data.total.toFixed(1)}h</span></div>))}{entries.length > 0 && <><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:'var(--text-dim)',textTransform:'uppercase',letterSpacing:0.14,marginTop:20,marginBottom:10}}>All entries</div>{entries.map(e => (<div key={e.id} style={{...s.tsRow, padding:'8px 14px'}}><div style={{...s.tsWorker,fontSize:13}}>{e.workerName}</div><div style={{...s.tsTime,fontSize:11}}>{formatDate(e.date)}</div><div style={{...s.tsTime,fontSize:11}}>{e.startTime}→{e.endTime}</div><div style={s.tsHours}>{e.hours}h</div><div style={{...s.tsDesc,fontSize:11}}>{e.description}</div><span style={{...s.tsStatus, fontSize:9, padding:'2px 6px', ...(e.status==='confirmed'?s.tsConfirmed:s.tsPending)}}>{e.status==='confirmed'?'✓':'⏳'}</span></div>))}</>}</div>);
+return (<div><TsDateFilterBar dateFrom={dateFrom} dateTo={dateTo} setDateFrom={setDateFrom} setDateTo={setDateTo}/><div style={s.tsSummary}><div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Total hours</div><div style={s.tsSummaryValue}>{totalHours.toFixed(1)}<span style={s.tsSummaryUnit}>hrs</span></div></div><div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Workers</div><div style={s.tsSummaryValue}>{byWorker.length}</div></div><div style={s.tsSummaryCard}><div style={s.tsSummaryLabel}>Entries</div><div style={s.tsSummaryValue}>{entries.length}</div></div></div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:'var(--text-dim)',textTransform:'uppercase',letterSpacing:0.14,marginBottom:10}}>Hours per worker</div>{byWorker.map(([name, data]) => (<div key={name} style={s.tsWorkerSummary}><span style={s.tsWorkerName}>👷 {name}</span><span style={{fontSize:11,color:'var(--text-dim)',fontFamily:"'JetBrains Mono',monospace"}}>{data.count} entries</span><span style={{fontSize:11,color:'var(--success)',fontFamily:"'JetBrains Mono',monospace"}}>{data.confirmed.toFixed(1)}h confirmed</span><span style={s.tsWorkerHours}>{data.total.toFixed(1)}h</span></div>))}{entries.length > 0 && <><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:'var(--text-dim)',textTransform:'uppercase',letterSpacing:0.14,marginTop:20,marginBottom:10}}>All entries</div>{entries.map(e => (<div key={e.id} style={{...s.tsRow, padding:'8px 14px'}}><div style={{...s.tsWorker,fontSize:13}}>{e.workerName}</div><div style={{...s.tsTime,fontSize:11}}>{formatDate(e.date)}</div><div style={{...s.tsTime,fontSize:11}}>{e.startTime}→{e.endTime}</div><div style={s.tsHours}>{e.hours}h</div><div style={{...s.tsDesc,fontSize:11}}>{e.description}</div><span style={{...s.tsStatus, fontSize:9, padding:'2px 6px', ...(e.status==='confirmed'?s.tsConfirmed:s.tsPending)}}>{e.status==='confirmed'?'✓':'⏳'}</span></div>))}</>}</div>);
 }
 
 function CrewRosterView({crew, onAdd, onRemove}) {
@@ -3540,6 +3573,14 @@ useEffect(() => {
     next = {...next, channels:[...next.channels, {id:'settings-recycle',type:'recycle-bin',name:'🗑recycle-bin',categoryId:'cat-settings',createdAt:new Date().toISOString()}]};
     changed = true;
   }
+  // Pinned channels: announcements & work-calendar live at the top of the sidebar, outside any category
+  ['crew-announcements','crew-calendar'].forEach(cid => {
+    const ch = next.channels.find(c => c.id === cid);
+    if (ch && !ch.pinned) {
+      next = {...next, channels: next.channels.map(c => c.id === cid ? {...c, pinned: true} : c)};
+      changed = true;
+    }
+  });
   // Hide legacy crew-roster (kept for backward-compat but hidden)
   const oldRoster = next.channels.find(c => c.id === 'crew-roster');
   if (oldRoster && !oldRoster._hidden) {
@@ -3567,7 +3608,8 @@ const sortedCategories = useMemo(() => [...d.categories].filter(c => !c.managerO
 const tsProjectChannels = useMemo(() => { const projectIds = [...new Set((timesheets||[]).map(t => t.projectId))]; return projectIds.map(pid => { const raw = d.channels.find(j => j.id === pid && j.type === 'job'); if (raw?.deletedAt) return null; const project = raw; return { id: 'ts-proj-' + pid, type: 'ts-project', name: project?.name || 'Unknown project', categoryId: 'cat-timesheets', _projectId: pid, colorId: project?.colorId }; }).filter(Boolean); }, [timesheets, d.channels]);
 const allChannelsIncludingDynamic = useMemo(() => [...d.channels.filter(c => !c.deletedAt), ...tsProjectChannels], [d.channels, tsProjectChannels]);
 const channel = d.channels.find(c => c.id === activeId) || tsProjectChannels.find(c => c.id === activeId); const getCategory = (id) => d.categories.find(c => c.id === id); const updateData = (fn) => setData(prev => fn(prev || {categories:[],channels:[]}));
-const channelsByCat = (catId) => { const regular = d.channels.filter(c => c.categoryId === catId && !c._hidden && !c.deletedAt); if(catId === 'cat-timesheets') return [...regular, ...tsProjectChannels]; return regular; };
+const channelsByCat = (catId) => { const regular = d.channels.filter(c => c.categoryId === catId && !c._hidden && !c.deletedAt && !c.pinned); if(catId === 'cat-timesheets') return [...regular, ...tsProjectChannels]; return regular; };
+const pinnedChannels = useMemo(() => { const order = ['crew-announcements','crew-calendar']; return d.channels.filter(c => c.pinned && !c.deletedAt).sort((a,b) => order.indexOf(a.id) - order.indexOf(b.id)); }, [d.channels]);
 const handleDragStart = (e, category) => { setDraggedCategory(category); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', category.id); };
 const handleDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
 const handleDrop = (e, targetCategory) => { e.preventDefault(); if(!draggedCategory || draggedCategory.id === targetCategory.id) return; updateData(prev => { const categories = [...prev.categories]; const draggedIdx = categories.findIndex(c => c.id === draggedCategory.id); const targetIdx = categories.findIndex(c => c.id === targetCategory.id); if(draggedIdx === -1 || targetIdx === -1) return prev; const [removed] = categories.splice(draggedIdx, 1); categories.splice(targetIdx, 0, removed); categories.forEach((c, i) => { c.order = i; }); return {...prev, categories}; }); setDraggedCategory(null); };
@@ -3854,6 +3896,19 @@ return (<div style={s.app}>
     </button>
   </div>
   <div style={s.projList}>
+    {pinnedChannels.length > 0 && (
+      <div style={{paddingBottom:6,marginBottom:6,borderBottom:'1px solid var(--border)'}}>
+        {pinnedChannels.map(ch => {
+          const isActive = ch.id === activeId;
+          return (
+            <div key={ch.id} style={{...s.chanItem, ...(isActive?s.chanItemActive:{})}} onClick={()=>selectChannel(ch.id)}>
+              <span style={s.chanHash}>📌</span>
+              <span style={{...s.chanName, ...(isActive?s.chanNameActive:{}), fontWeight:600}}>{ch.name}</span>
+            </div>
+          );
+        })}
+      </div>
+    )}
     {sortedCategories.map(cat => (
       <CategoryBlock key={cat.id} category={cat} channels={channelsByCat(cat.id)} activeId={activeId} onSelect={selectChannel} getColor={getColor}
         onAddChannel={(c) => { if(c.system === 'running') { setEditingJob(null); setJobTargetCategory(c.id); setShowJobWizard(true); if(isMobile) setDrawerOpen(false); } else { setShowTypePicker({category: c, initialType: c.id === 'cat-tools' ? 'materials' : null}); if(isMobile) setDrawerOpen(false); } }}
