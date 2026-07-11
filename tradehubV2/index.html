@@ -1789,8 +1789,36 @@ const deleteNote = (noteId) => setNotes(prev => ({...prev, [channelId]: {...(pre
 return (<div style={{height:'100%',display:'flex',flexDirection:'column'}}><div style={{flex:1,overflowY:'auto',paddingBottom:16}}>{feed.length === 0 ? <div style={{...s.empty,height:'60%'}}><span style={s.emptyIcon}>📝</span><span style={s.emptyText}>No entries yet</span></div> : feed.map(n => (<div key={n.id} style={s.note}><div style={s.noteText}>{renderWithMentions(n.text, allChannels, onMentionClick)}</div><div style={{...s.noteMeta, display:'flex', justifyContent:'space-between', alignItems:'center'}}><span>{formatTime(n.createdAt)}</span><button onClick={()=>deleteNote(n.id)} style={{background:'none',border:'none',color:'var(--text-faint)',cursor:'pointer',fontSize:14,padding:'0 4px'}}>×</button></div></div>))}</div><div style={{paddingTop:12,borderTop:'1px solid var(--border)'}}><div style={s.noteInputWrap}><MentionDropdown mentions={mentions} inputRef={inputRef} getCategory={getCategory}/><textarea ref={inputRef} style={s.noteInput} value={text} onChange={(e) => mentions.handleChange(e)} placeholder={placeholder || 'Add a note... (type # to mention)'} rows={3} onKeyDown={(e) => { const handled = mentions.handleKeyDown(e, inputRef); if(!handled && e.key==='Enter' && e.metaKey) addNote(); }}/></div><div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:10,color:'var(--text-dim)',fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.14}}>⌘ + Enter to send · # to mention</span><button style={s.sendBtn} onClick={addNote}>Add entry</button></div></div></div>);
 }
 
-function AnnouncementsView({channel, notes, setNotes, allChannels, onMentionClick, getCategory}) {
-return (<div style={{height:'100%',display:'flex',flexDirection:'column'}}>{channel.whatsappLink ? (<div style={s.announcementBanner}><div style={s.announcementIcon}>📢</div><div style={s.announcementTitle}>Join the Company Chat Group</div><div style={s.announcementText}>Stay updated with company announcements, job opportunities, and crew news.</div><a href={channel.whatsappLink} target="_blank" rel="noreferrer" style={s.announcementBtn}>💬 Join chat group →</a></div>) : null}<NotesFeed channelId={channel.id} threadId="main" notes={notes} setNotes={setNotes} placeholder="Post an announcement... (type # to mention)" allChannels={allChannels} onMentionClick={onMentionClick} getCategory={getCategory}/></div>);
+function AnnouncementsView({channel, notes, setNotes, allChannels, onMentionClick, getCategory, currentUser, onAddChatGroup, onEditChatGroup, onDeleteChatGroup}) {
+const isManager = currentUser?.role === 'manager';
+const hasGroups = Array.isArray(channel.chatGroups);
+const groups = hasGroups ? channel.chatGroups.filter(g => !g.roles || g.roles.length === 0 || isManager || g.roles.includes(currentUser?.role)) : [];
+const roleLabel = (g) => (!g.roles || g.roles.length === 0) ? '👥 everyone' : '🔒 ' + g.roles.map(r => r.replace('_',' ')).join(' · ');
+return (<div style={{height:'100%',display:'flex',flexDirection:'column'}}>
+  {hasGroups ? (
+    <div style={{marginBottom:16}}>
+      {groups.map(g => (
+        <div key={g.id} style={{display:'flex',gap:12,alignItems:'center',padding:'12px 16px',background:'var(--success-bg)',border:'1px solid var(--success)',borderRadius:10,marginBottom:8,flexWrap:'wrap'}}>
+          <div style={{flex:'1 1 160px',minWidth:0}}>
+            <div style={{fontSize:15,fontWeight:800,color:'var(--text)'}}>{g.name}</div>
+            <div style={{fontSize:10,color:'var(--text-muted)',marginTop:3,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.1}}>{roleLabel(g)}</div>
+          </div>
+          {g.link
+            ? (<a href={g.link} target="_blank" rel="noreferrer" style={s.announcementBtn}>💬 Join →</a>)
+            : (isManager
+                ? (<button style={{...s.badge,...s.badgeGhost,cursor:'pointer'}} onClick={()=>onEditChatGroup(g)}>+ Add WhatsApp link</button>)
+                : (<span style={{...s.badge,...s.badgeGhost}}>No link yet</span>))}
+          {isManager && (<div style={{display:'flex',gap:4}}>
+            <button title="Edit group" style={{...s.badge,...s.badgeGhost,cursor:'pointer'}} onClick={()=>onEditChatGroup(g)}>✎</button>
+            <button title="Remove group" style={{...s.badge,...s.badgeGhost,cursor:'pointer'}} onClick={()=>onDeleteChatGroup(g.id)}>✕</button>
+          </div>)}
+        </div>
+      ))}
+      {isManager && (<button style={{...s.badge,...s.badgeGhost,cursor:'pointer',marginTop:2}} onClick={onAddChatGroup}>+ Add chat group</button>)}
+    </div>
+  ) : (channel.whatsappLink ? (<div style={s.announcementBanner}><div style={s.announcementIcon}>📢</div><div style={s.announcementTitle}>Join the Company Chat Group</div><div style={s.announcementText}>Stay updated with company announcements, job opportunities, and crew news.</div><a href={channel.whatsappLink} target="_blank" rel="noreferrer" style={s.announcementBtn}>💬 Join chat group →</a></div>) : null)}
+  <NotesFeed channelId={channel.id} threadId="main" notes={notes} setNotes={setNotes} placeholder="Post an announcement... (type # to mention)" allChannels={allChannels} onMentionClick={onMentionClick} getCategory={getCategory}/>
+</div>);
 }
 
 // ── RAMS IFRAME VIEW ────────────────────────────────────────────────────────
@@ -3283,46 +3311,47 @@ return (<div style={{maxWidth:560}}>
 </div>);
 }
 
-// Create/edit a COMMS WhatsApp chat: name, group link, role visibility
-function CommsChatModal({editing, onSave, onClose}) {
-const [name, setName] = useState(editing?.name || '💬general');
-const [link, setLink] = useState(editing?.whatsappLink || '');
+// Create/edit a chat group inside announcements: name, WhatsApp link, optional role restriction (empty = everyone)
+function ChatGroupModal({editing, onSave, onClose}) {
+const [name, setName] = useState(editing?.name || '');
+const [link, setLink] = useState(editing?.link || '');
 const ROLES = [['manager','Manager'],['team_leader','Team leader'],['crew','Crew']];
-const [roles, setRoles] = useState(() => { const r = editing?.visibleRoles && editing.visibleRoles.length ? [...editing.visibleRoles] : ['manager','team_leader','crew']; return r.includes('manager') ? r : ['manager', ...r]; });
-const toggle = (r) => { if (r === 'manager') return; setRoles(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]); };
+const [roles, setRoles] = useState(editing?.roles ? [...editing.roles] : []);
+const toggle = (r) => setRoles(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]);
 const save = () => {
-  if (!name.trim()) return alert('Chat name is required.');
-  onSave({id: editing?.id, name: name.trim(), whatsappLink: link.trim(), visibleRoles: roles});
+  if (!name.trim()) return alert('Group name is required.');
+  onSave({id: editing?.id, name: name.trim(), link: link.trim(), roles});
   onClose();
 };
 return (<div style={s.overlay} onClick={onClose}>
   <div style={{...s.modal, maxWidth:420}} onClick={e=>e.stopPropagation()}>
     <div style={s.modalHeader}>
       <div>
-        <div style={s.modalKicker}>Comms</div>
-        <div style={s.modalTitle}>{editing ? 'Edit WhatsApp chat' : 'New WhatsApp chat'}</div>
+        <div style={s.modalKicker}>Announcements</div>
+        <div style={s.modalTitle}>{editing ? 'Edit chat group' : 'New chat group'}</div>
       </div>
       <button style={s.closeBtn} onClick={onClose}>×</button>
     </div>
     <div style={s.modalBody}>
-      <label style={s.label}>Chat name *</label>
-      <input style={s.input} value={name} onChange={e=>setName(e.target.value)} placeholder="💬general, 👔team-leaders, 🏢office..."/>
+      <label style={s.label}>Group name *</label>
+      <input style={s.input} value={name} onChange={e=>setName(e.target.value)} placeholder="💬general comms, 👔team leaders, 🏢office..."/>
       <label style={s.label}>WhatsApp group link</label>
       <input style={s.input} value={link} onChange={e=>setLink(e.target.value)} placeholder="https://chat.whatsapp.com/..."/>
-      <div style={{fontSize:11,color:'var(--text-faint)',marginTop:-10,marginBottom:14}}>Create the group in WhatsApp, copy the invite link and paste it here. It can also be added later from the channel header.</div>
-      <label style={s.label}>Who can see this chat</label>
-      <div style={{display:'flex',gap:14,flexWrap:'wrap',marginBottom:16}}>
-        {ROLES.map(([value,labelText]) => (
-          <label key={value} style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:13,color:'var(--text)',cursor: value==='manager'?'not-allowed':'pointer',opacity: value==='manager'?0.6:1}}>
-            <input type="checkbox" checked={roles.includes(value)} disabled={value==='manager'} onChange={()=>toggle(value)} style={{cursor:'inherit'}}/>
-            {labelText}{value==='manager' && ' (always)'}
+      <div style={{fontSize:11,color:'var(--text-faint)',marginTop:-10,marginBottom:14}}>Create the group in WhatsApp, copy the invite link and paste it here. You can also add it later.</div>
+      <label style={s.label}>Restrict to specific roles?</label>
+      <div style={{display:'flex',gap:14,flexWrap:'wrap',marginBottom:6}}>
+        {ROLES.map(([value, labelText]) => (
+          <label key={value} style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:13,color:'var(--text)',cursor:'pointer'}}>
+            <input type="checkbox" checked={roles.includes(value)} onChange={()=>toggle(value)} style={{cursor:'pointer'}}/>
+            {labelText}
           </label>
         ))}
       </div>
+      <div style={{fontSize:11,color:'var(--text-faint)',marginBottom:16}}>Leave all unticked and the group is visible to <b>everyone</b>. Tick one or more roles and only those roles (plus managers) will see it.</div>
     </div>
     <div style={s.modalFooter}>
       <button style={s.cancelBtn} onClick={onClose}>Cancel</button>
-      <button style={s.primaryBtn} onClick={save}>{editing ? 'Save' : 'Create chat'}</button>
+      <button style={s.primaryBtn} onClick={save}>{editing ? 'Save' : 'Create group'}</button>
     </div>
   </div>
 </div>);
@@ -3475,8 +3504,8 @@ return (<div style={s.overlay} onClick={onClose}>
 </div>);
 }
 
-function ThreadView({channel, thread, notes, setNotes, allChannels, incidents, onIncidentSubmit, onIncidentDelete, onIncidentEdit, onMentionClick, onJumpToProject, onSetChat, onUpdateMaterials, onAddMaterial, calendarEntries, onNewBooking, onEditBooking, onDeleteBooking, getCategory, allJobs, timesheets, onAddTimesheet, onEditTimesheet, onViewTimesheet, onConfirmTimesheet, onDeleteTimesheet, onBulkConfirmTimesheet, crew, onAddCrew, onRemoveCrew, isMobile, company, currentUser, onUpdateCompany, toolboxes, onNewToolbox, onViewToolbox, onDeleteToolbox, ramsEntries, onNewRams, onViewRams, onDeleteRams, deletedChannels, onRestoreChannel, onPurgeChannel}) {
-if(channel.type === 'plain') { if(channel.commsChat || channel.name === '📢announcements') { return <AnnouncementsView channel={channel} notes={notes} setNotes={setNotes} allChannels={allChannels} onMentionClick={onMentionClick} getCategory={getCategory}/>; } return <NotesFeed channelId={channel.id} threadId="main" notes={notes} setNotes={setNotes} placeholder={`Post in ${channel.name}... (type # to mention)`} allChannels={allChannels} onMentionClick={onMentionClick} getCategory={getCategory}/>; }
+function ThreadView({channel, thread, notes, setNotes, allChannels, incidents, onIncidentSubmit, onIncidentDelete, onIncidentEdit, onMentionClick, onJumpToProject, onSetChat, onUpdateMaterials, onAddMaterial, calendarEntries, onNewBooking, onEditBooking, onDeleteBooking, getCategory, allJobs, timesheets, onAddTimesheet, onEditTimesheet, onViewTimesheet, onConfirmTimesheet, onDeleteTimesheet, onBulkConfirmTimesheet, crew, onAddCrew, onRemoveCrew, isMobile, company, currentUser, onUpdateCompany, toolboxes, onNewToolbox, onViewToolbox, onDeleteToolbox, ramsEntries, onNewRams, onViewRams, onDeleteRams, deletedChannels, onRestoreChannel, onPurgeChannel, onAddChatGroup, onEditChatGroup, onDeleteChatGroup}) {
+if(channel.type === 'plain') { if(channel.commsChat || channel.name === '📢announcements' || Array.isArray(channel.chatGroups)) { return <AnnouncementsView channel={channel} notes={notes} setNotes={setNotes} allChannels={allChannels} onMentionClick={onMentionClick} getCategory={getCategory} currentUser={currentUser} onAddChatGroup={onAddChatGroup} onEditChatGroup={onEditChatGroup} onDeleteChatGroup={onDeleteChatGroup}/>; } return <NotesFeed channelId={channel.id} threadId="main" notes={notes} setNotes={setNotes} placeholder={`Post in ${channel.name}... (type # to mention)`} allChannels={allChannels} onMentionClick={onMentionClick} getCategory={getCategory}/>; }
 if(channel.type === 'materials') return <MaterialsView channel={channel} onUpdate={onUpdateMaterials} onAdd={onAddMaterial}/>;
 if(channel.type === 'calendar') return <CalendarView entries={calendarEntries} jobChannels={allJobs} allChannels={allChannels} getCategory={getCategory} onNewBooking={onNewBooking} onEditBooking={onEditBooking} onDeleteBooking={onDeleteBooking} onJumpToProject={onJumpToProject} onMentionClick={onMentionClick} company={company} currentUser={currentUser}/>;
 if(channel.type === 'incidents-bin') return <IncidentsBinView incidentType={channel.incidentType} incidents={incidents} allChannels={allChannels} onMentionClick={onMentionClick} onJumpToProject={onJumpToProject} onEdit={onIncidentEdit} onDelete={onIncidentDelete} currentUser={currentUser}/>;
@@ -3640,11 +3669,11 @@ useEffect(() => {
       changed = true;
     }
   });
-  // Comms chats: announcements becomes the first chat of the COMMS group (renamable, own WhatsApp link, role visibility)
+  // Chat groups inside announcements: default 'general comms' group (renamable), + more groups with role visibility
   {
     const ann = next.channels.find(c => c.id === 'crew-announcements');
-    if (ann && !ann.commsChat) {
-      next = {...next, channels: next.channels.map(c => c.id === 'crew-announcements' ? {...c, commsChat: true} : c)};
+    if (ann && !Array.isArray(ann.chatGroups)) {
+      next = {...next, channels: next.channels.map(c => c.id === 'crew-announcements' ? {...c, chatGroups: [{id:'grp-general', name:'💬general comms', link: c.whatsappLink || '', roles: []}]} : c)};
       changed = true;
     }
   }
@@ -3677,18 +3706,22 @@ const allChannelsIncludingDynamic = useMemo(() => [...d.channels.filter(c => !c.
 const channel = d.channels.find(c => c.id === activeId) || tsProjectChannels.find(c => c.id === activeId); const getCategory = (id) => d.categories.find(c => c.id === id); const updateData = (fn) => setData(prev => fn(prev || {categories:[],channels:[]}));
 const channelsByCat = (catId) => { const regular = d.channels.filter(c => c.categoryId === catId && !c._hidden && !c.deletedAt && !c.pinned); if(catId === 'cat-timesheets') return [...regular, ...tsProjectChannels]; return regular; };
 const pinnedChannels = useMemo(() => { const order = ['crew-announcements','crew-calendar']; return d.channels.filter(c => c.pinned && !c.deletedAt).sort((a,b) => order.indexOf(a.id) - order.indexOf(b.id)); }, [d.channels]);
-// COMMS group: pinned WhatsApp chats, each with its own link and role visibility
-const canSeeCommsChat = (c) => !c.visibleRoles || c.visibleRoles.length === 0 || currentUser.role === 'manager' || isSuperAdmin || c.visibleRoles.includes(currentUser.role);
-const commsChats = useMemo(() => pinnedChannels.filter(c => c.commsChat).filter(canSeeCommsChat), [pinnedChannels, currentUser, isSuperAdmin]);
-const otherPinned = useMemo(() => pinnedChannels.filter(c => !c.commsChat), [pinnedChannels]);
-const [commsModal, setCommsModal] = useState(null);
-const saveCommsChat = (payload) => {
-  if (currentUser.role !== 'manager' && !isSuperAdmin) return alert('Only managers can create or edit COMMS chats.');
-  updateData(prev => {
-    if (payload.id) return {...prev, channels: prev.channels.map(c => c.id === payload.id ? {...c, name: payload.name, whatsappLink: payload.whatsappLink, visibleRoles: payload.visibleRoles} : c)};
-    const ch = {id: 'comms-' + Date.now().toString(36), type: 'plain', name: payload.name, categoryId: 'cat-crew', createdAt: new Date().toISOString(), pinned: true, commsChat: true, whatsappLink: payload.whatsappLink, visibleRoles: payload.visibleRoles};
-    return {...prev, channels: [...prev.channels, ch]};
-  });
+// Chat groups (inside announcements): visible per role, managed by managers
+const pinnedVisible = useMemo(() => pinnedChannels.filter(c => !c.visibleRoles || c.visibleRoles.length === 0 || currentUser.role === 'manager' || isSuperAdmin || c.visibleRoles.includes(currentUser.role)), [pinnedChannels, currentUser, isSuperAdmin]);
+const [chatGroupModal, setChatGroupModal] = useState(null);
+const saveChatGroup = (channelId, payload) => {
+  if (currentUser.role !== 'manager' && !isSuperAdmin) return alert('Only managers can create or edit chat groups.');
+  updateData(prev => ({...prev, channels: prev.channels.map(c => {
+    if (c.id !== channelId) return c;
+    const groups = Array.isArray(c.chatGroups) ? c.chatGroups : [];
+    if (payload.id) return {...c, chatGroups: groups.map(g => g.id === payload.id ? {...g, name: payload.name, link: payload.link, roles: payload.roles} : g)};
+    return {...c, chatGroups: [...groups, {id: 'grp-' + Date.now().toString(36), name: payload.name, link: payload.link, roles: payload.roles}]};
+  })}));
+};
+const deleteChatGroup = (channelId, groupId) => {
+  if (currentUser.role !== 'manager' && !isSuperAdmin) return;
+  if (!confirm('Remove this chat group from the list? (The WhatsApp group itself is not affected.)')) return;
+  updateData(prev => ({...prev, channels: prev.channels.map(c => c.id === channelId ? {...c, chatGroups: (c.chatGroups || []).filter(g => g.id !== groupId)} : c)}));
 };
 const handleDragStart = (e, category) => { setDraggedCategory(category); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', category.id); };
 const handleDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
@@ -3976,24 +4009,9 @@ return (<div style={s.app}>
     </button>
   </div>
   <div style={s.projList}>
-    {(commsChats.length > 0 || otherPinned.length > 0 || currentUser.role === 'manager') && (
+    {pinnedVisible.length > 0 && (
       <div style={{paddingBottom:6,marginBottom:6,borderBottom:'1px solid var(--border)'}}>
-        <div style={{...s.catHeader, cursor:'default'}}>
-          <span style={s.catLabel}>📌 COMMS</span>
-          {currentUser.role === 'manager' && (<button title="New WhatsApp chat" style={{background:'none',border:'none',color:'var(--text-faint)',cursor:'pointer',fontSize:14,padding:'0 4px',lineHeight:1}} onClick={()=>setCommsModal({})}>+</button>)}
-        </div>
-        {commsChats.map(ch => {
-          const isActive = ch.id === activeId;
-          return (
-            <div key={ch.id} style={{...s.chanItem, ...(isActive?s.chanItemActive:{})}} onClick={()=>selectChannel(ch.id)}>
-              <span style={s.chanHash}>💬</span>
-              <span style={{...s.chanName, ...(isActive?s.chanNameActive:{}), fontWeight:600}}>{ch.name}</span>
-              {ch.visibleRoles && ch.visibleRoles.length > 0 && ch.visibleRoles.length < 3 && <span title={'Visible to: '+ch.visibleRoles.map(r=>r.replace('_',' ')).join(', ')} style={{fontSize:9,opacity:0.6}}>🔒</span>}
-              {currentUser.role === 'manager' && (<button title="Edit chat" onClick={(e)=>{e.stopPropagation();setCommsModal({editing:ch});}} style={{background:'none',border:'none',color:'var(--text-faint)',cursor:'pointer',fontSize:11,padding:'0 2px',opacity:0.7}}>✎</button>)}
-            </div>
-          );
-        })}
-        {otherPinned.map(ch => {
+        {pinnedVisible.map(ch => {
           const isActive = ch.id === activeId;
           return (
             <div key={ch.id} style={{...s.chanItem, ...(isActive?s.chanItemActive:{})}} onClick={()=>selectChannel(ch.id)}>
@@ -4046,7 +4064,7 @@ return (<div style={s.app}>
       <div style={headerTitleWrapStyle}>
         <div style={headerKickerStyle}>{currentCategory ? `${currentCategory.emoji} ${currentCategory.name}` : ''}{channel.status === 'done' && ' · done'}</div>
         <div style={headerTitleStyle}>{channelColor && <span style={{...s.headerColorDot, background:channelColor.bar}}/>}{channel.type === 'ts-project' ? '🏢 ' + channel.name : channel.name}</div>
-        <div style={headerMetaStyle}>{channel.type === 'job' ? `${channel.address || 'No address'} · Started ${formatDate(channel.startDate)}` : channel.commsChat ? ('Company chat — ' + (channel.visibleRoles && channel.visibleRoles.length > 0 && channel.visibleRoles.length < 3 ? 'visible to: ' + channel.visibleRoles.map(r=>r.replace('_',' ')).join(', ') : 'join the WhatsApp group')) : channel.name === '📢announcements' ? 'Company-wide announcements — join the chat group' : channel.type === 'materials' ? 'Materials list' : channel.type === 'calendar' ? 'Work calendar — bookings & crew scheduling' : channel.type === 'incidents-bin' ? 'All ' + channel.name + ' reports across projects' : channel.type === 'ts-overview' ? 'View hours per worker and project — filter by date range for invoicing' : channel.type === 'ts-project' ? "All workers' hours on this project" : channel.type === 'users' ? 'Manage user accounts and roles' : channel.type === 'company-info' ? 'Company name and logo settings' : channel.type === 'recycle-bin' ? 'Deleted projects — restore within 30 days before they are gone forever' : channel.type === 'roster' ? 'Manage crew members — names appear in timesheet dropdowns' : 'Plain channel'}</div>
+        <div style={headerMetaStyle}>{channel.type === 'job' ? `${channel.address || 'No address'} · Started ${formatDate(channel.startDate)}` : (channel.commsChat || channel.name === '📢announcements' || Array.isArray(channel.chatGroups)) ? 'Company announcements & chat groups — join yours below' : channel.type === 'materials' ? 'Materials list' : channel.type === 'calendar' ? 'Work calendar — bookings & crew scheduling' : channel.type === 'incidents-bin' ? 'All ' + channel.name + ' reports across projects' : channel.type === 'ts-overview' ? 'View hours per worker and project — filter by date range for invoicing' : channel.type === 'ts-project' ? "All workers' hours on this project" : channel.type === 'users' ? 'Manage user accounts and roles' : channel.type === 'company-info' ? 'Company name and logo settings' : channel.type === 'recycle-bin' ? 'Deleted projects — restore within 30 days before they are gone forever' : channel.type === 'roster' ? 'Manage crew members — names appear in timesheet dropdowns' : 'Plain channel'}</div>
       </div>
       <div style={headerActionsStyle}>
         {channel.type === 'job' && channel.whatsapp && (<a href={channel.whatsapp} target="_blank" rel="noreferrer" style={{...s.badge,...s.badgeSuccess,textDecoration:'none'}}>💬 Chat</a>)}
@@ -4073,12 +4091,12 @@ return (<div style={s.app}>
       </div>
     )}
     <div style={contentStyle}>
-      <ThreadView channel={channel} thread={currentThread} notes={notes} setNotes={setNotes} allChannels={allChannelsIncludingDynamic} incidents={incidents} onIncidentSubmit={() => setIncidentModal({})} onIncidentDelete={deleteIncident} onIncidentEdit={(inc)=>setIncidentModal({editing:inc})} onMentionClick={handleMentionClick} onJumpToProject={selectChannel} onSetChat={(link)=>updateData(prev=>({...prev, channels: prev.channels.map(c=>c.id===channel.id?{...c, whatsapp:link}:c)}))} onUpdateMaterials={updateMaterials} onAddMaterial={() => setShowAddMaterial(true)} calendarEntries={calendarEntries || []} onNewBooking={(date) => setBookingModal({defaultDate: date})} onEditBooking={(entry) => setBookingModal({editing: entry})} onDeleteBooking={deleteBooking} getCategory={getCategory} allJobs={allJobs} timesheets={timesheets || []} onAddTimesheet={() => setShowTimesheetModal({projectId:channel.id, projectName:channel.name})} onEditTimesheet={(e)=>setShowTimesheetModal({projectId:e.projectId, projectName:e.projectName, editing:e})} onViewTimesheet={(e)=>setViewTimesheet(e)} onConfirmTimesheet={confirmTimesheetEntry} onDeleteTimesheet={deleteTimesheetEntry} onBulkConfirmTimesheet={bulkConfirmTimesheet} crew={crew} onAddCrew={addCrew} onRemoveCrew={removeCrew} isMobile={isMobile} company={company} currentUser={currentUser} onUpdateCompany={onUpdateCompany} toolboxes={toolboxes} onNewToolbox={()=>setToolboxModal({})} onViewToolbox={(tb)=>setViewToolbox(tb)} onDeleteToolbox={deleteToolbox} ramsEntries={ramsEntries} onNewRams={()=>setRamsModal({})} onViewRams={(r)=>setViewRams(r)} onDeleteRams={deleteRams} deletedChannels={deletedJobs} onRestoreChannel={restoreChannel} onPurgeChannel={purgeChannel}/>
+      <ThreadView channel={channel} thread={currentThread} notes={notes} setNotes={setNotes} allChannels={allChannelsIncludingDynamic} incidents={incidents} onIncidentSubmit={() => setIncidentModal({})} onIncidentDelete={deleteIncident} onIncidentEdit={(inc)=>setIncidentModal({editing:inc})} onMentionClick={handleMentionClick} onJumpToProject={selectChannel} onSetChat={(link)=>updateData(prev=>({...prev, channels: prev.channels.map(c=>c.id===channel.id?{...c, whatsapp:link}:c)}))} onUpdateMaterials={updateMaterials} onAddMaterial={() => setShowAddMaterial(true)} calendarEntries={calendarEntries || []} onNewBooking={(date) => setBookingModal({defaultDate: date})} onEditBooking={(entry) => setBookingModal({editing: entry})} onDeleteBooking={deleteBooking} getCategory={getCategory} allJobs={allJobs} timesheets={timesheets || []} onAddTimesheet={() => setShowTimesheetModal({projectId:channel.id, projectName:channel.name})} onEditTimesheet={(e)=>setShowTimesheetModal({projectId:e.projectId, projectName:e.projectName, editing:e})} onViewTimesheet={(e)=>setViewTimesheet(e)} onConfirmTimesheet={confirmTimesheetEntry} onDeleteTimesheet={deleteTimesheetEntry} onBulkConfirmTimesheet={bulkConfirmTimesheet} crew={crew} onAddCrew={addCrew} onRemoveCrew={removeCrew} isMobile={isMobile} company={company} currentUser={currentUser} onUpdateCompany={onUpdateCompany} toolboxes={toolboxes} onNewToolbox={()=>setToolboxModal({})} onViewToolbox={(tb)=>setViewToolbox(tb)} onDeleteToolbox={deleteToolbox} ramsEntries={ramsEntries} onNewRams={()=>setRamsModal({})} onViewRams={(r)=>setViewRams(r)} onDeleteRams={deleteRams} deletedChannels={deletedJobs} onRestoreChannel={restoreChannel} onPurgeChannel={purgeChannel} onAddChatGroup={()=>setChatGroupModal({channelId:channel.id})} onEditChatGroup={(g)=>setChatGroupModal({channelId:channel.id, editing:g})} onDeleteChatGroup={(gid)=>deleteChatGroup(channel.id, gid)}/>
     </div>
   </>)}
 </div>
 {clockModal && (<ClockModal mode={clockModal.mode} currentUser={currentUser} allJobs={allJobs} myClock={myClock} clockMemory={clockMemory} onClockIn={doClockIn} onClockOut={doClockOut} onClose={() => setClockModal(null)}/>)}
-{commsModal && (<CommsChatModal editing={commsModal.editing} onSave={saveCommsChat} onClose={() => setCommsModal(null)}/>)}
+{chatGroupModal && (<ChatGroupModal editing={chatGroupModal.editing} onSave={(p)=>saveChatGroup(chatGroupModal.channelId, p)} onClose={() => setChatGroupModal(null)}/>)}
 {showJobWizard && (<JobWizard onClose={() => setShowJobWizard(false)} onSave={saveJob} editing={editingJob} company={company}/>)}
 {showShare && channel && channel.type === 'job' && (<ShareModal channel={channel} onClose={() => setShowShare(false)}/>)}
 {showCategoryModal && (<CategoryModal onClose={() => { setShowCategoryModal(false); setEditingCategory(null); }} onSave={saveCategory} onDelete={(cat) => { if (isSuperAdmin) { if (confirm(`Delete category "${cat.name}"?\n\nProjects in this category will move to "Projects on Run". Other channels will be deleted.`)) { updateData(prev => { const runCat = prev.categories.find(c => c.system === 'running'); const channels = prev.channels.map(c => c.categoryId === cat.id ? (c.type === 'job' ? {...c, categoryId: runCat?.id || c.categoryId} : null) : c).filter(Boolean); return {...prev, categories: prev.categories.filter(c => c.id !== cat.id), channels}; }); } } else { requestDeletion('category', cat.id, cat.name); } }} editing={editingCategory} isAdmin={isSuperAdmin}/>)}
